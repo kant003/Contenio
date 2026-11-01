@@ -1,0 +1,20 @@
+name: contenio
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: contenio
+      POSTGRES_USER: contenio
+      POSTGRES_PASSWORD: ${LOCAL_DATABASE_PASSWORD:?Ejecuta npm run db:env antes de iniciar Docker}
+    ports: ["127.0.0.1:55432:5432"]
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U contenio -d contenio"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  mail:
+    image: axllent/mailpit:latest
+    ports: ["127.0.0.1:58025:8025", "127.0.0.1:51025:1025"]
+volumes:
+  postgres_data:
