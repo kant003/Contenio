@@ -1501,22 +1501,11 @@ input[type="checkbox"] {
   color: #a49bad;
   margin: 6px 0 0;
 }
-.media-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin: 25px 0 19px;
-  gap: 20px;
+.media-panel {
+  margin-top: 25px;
 }
-.media-heading h2 {
-  font-size: 15px;
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.media-heading .search-input {
-  max-width: 250px;
+.media-panel .media-grid {
+  padding: 0 23px 22px;
 }
 .media-grid {
   display: grid;
@@ -2495,6 +2484,22 @@ input[type="checkbox"] {
   }
 }
 @media (max-width: 480px) {
+  .media-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .media-filters .search-input {
+    grid-column: 1 / -1;
+  }
+  .media-filters select {
+    width: 100%;
+    min-width: 0;
+    font-size: 11px;
+  }
+  .media-filters > .button {
+    width: 100%;
+  }
+
   .main-content {
     padding: 24px 14px;
   }
@@ -2613,11 +2618,8 @@ input[type="checkbox"] {
   .upload-area > .button {
     padding: 9px;
   }
-  .media-heading .search-input {
-    max-width: 160px;
-  }
-  .media-heading h2 {
-    font-size: 13px;
+  .media-panel .media-grid {
+    padding: 0 16px 16px;
   }
   .settings-body {
     padding: 17px;

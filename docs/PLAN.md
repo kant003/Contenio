@@ -49,4 +49,16 @@ La validación de Neon, Blob y SMTP en producción continúa pendiente: las prue
 - Modelos y Ajustes ya no consultan entradas, publicaciones ni archivos; el listado no envía sus cuerpos o snapshots al navegador.
 - 8 pruebas unitarias, 41 comprobaciones de integración existentes y 22 nuevas, más 6 pruebas Playwright sobre producción local: todo correcto. Tipos, ESLint y build correctos.
 
-Próximas mejoras locales: paginar la biblioteca y los selectores de referencias; verificar de principio a fin los flujos de recuperación de cuenta con el buzón local. La conexión y validación real de Neon/Blob continúa pendiente del acceso a Vercel.
+La paginación de la biblioteca se ha completado en el siguiente avance. Próximas mejoras locales: paginar los selectores de referencias y archivos del editor; verificar de principio a fin los flujos de recuperación de cuenta con el buzón local. La conexión y validación real de Neon/Blob continúa pendiente del acceso a Vercel.
+
+## Avance: biblioteca de archivos con búsqueda y paginación
+
+- Consulta PostgreSQL con RLS: hasta 12 archivos por página, búsqueda literal por nombre y metadatos del idioma elegido, filtros de imágenes/PDF y ordenación por nombre, tamaño o fecha de subida.
+- Parámetros en la URL para recargar, compartir y volver atrás conservando filtros, idioma y página. Las URLs privadas se firman solo para los archivos visibles.
+- Contadores y tamaño total de los archivos registrados en el espacio, independientes de los resultados filtrados. No representan el consumo completo de Blob, que también puede incluir objetos huérfanos.
+- El diálogo se abre en el idioma del listado. Guardar los metadatos actualiza la búsqueda; eliminar el último resultado resuelve la página automáticamente.
+- Las subidas vuelven a los recientes conservando el idioma para que ningún filtro anterior las oculte. El selector se reinicia tras un error y permite reintentar.
+- Revisado en escritorio y móvil; selectores móviles distribuidos en dos columnas.
+- Verificación: 10 pruebas unitarias, 85 comprobaciones de integración (41 + 22 + 22), 8 pruebas Playwright sobre producción local, tipos, ESLint y build correctos.
+
+Este avance no cambia el esquema ni requiere nuevas migraciones. No se han creado recursos remotos ni realizado push. Neon, Blob y correo de producción siguen pendientes de conexión y validación con los accesos de Vercel.

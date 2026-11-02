@@ -2,6 +2,8 @@ import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 import { session } from "@/lib/session";
 import { userQuery } from "@/lib/database";
+import { getMediaPage } from "@/lib/media-listing";
+import { parseMediaFilters, mediaHref } from "@/lib/media-filters";
 import { getContentPage } from "@/lib/content-listing";
 import {
   contentHref,
@@ -107,15 +109,19 @@ export default async function Workspace({
   } else if (section[0] === "models" && section.length === 1)
     body = <Models space={spaceId} types={models} isAdmin={isAdmin} />;
   else if (section[0] === "media" && section.length === 1) {
-    const assets = await userQuery<Asset>(
-      user.id,
-      "select * from assets where space_id=$1 order by created_at desc",
-      [spaceId],
-    );
+    const filters = parseMediaFilters(search);
+    const result = await getMediaPage(user.id, spaceId, filters);
+    if (result.page !== filters.page)
+      redirect(mediaHref(spaceId, { ...filters, page: result.page }));
     body = (
       <Media
+        key={spaceId}
         space={spaceId}
-        assets={assets.map((a) => ({ ...a, url: assetUrl(a) }))}
+        filters={filters}
+        result={{
+          ...result,
+          items: result.items.map((a) => ({ ...a, url: assetUrl(a) })),
+        }}
       />
     );
   } else if (section[0] === "settings" && section.length === 1 && isAdmin) {

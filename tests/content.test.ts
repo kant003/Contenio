@@ -1,3 +1,4 @@
+import { parseMediaFilters, mediaHref } from "../src/lib/media-filters";
 import { parseContentFilters, contentHref } from "../src/lib/content-filters";
 import { describe, it, expect } from "vitest";
 import { hasContent } from "../src/lib/content-validation";
@@ -113,5 +114,41 @@ describe("filtros del listado", () => {
       filters,
     );
     expect(url.pathname).toBe("/spaces/space/content");
+  });
+});
+
+describe("filtros de archivos", () => {
+  it("rechaza parámetros manipulados sin permitir límites arbitrarios", () => {
+    expect(
+      parseMediaFilters({
+        q: " " + "x".repeat(300),
+        kind: "__proto__",
+        sort: "drop table",
+        locale: ["gl", "es"],
+        page: "-1",
+        limit: "1000000",
+      }),
+    ).toEqual({
+      q: "x".repeat(256),
+      kind: "",
+      locale: "gl",
+      sort: "recent",
+      page: 1,
+    });
+    expect(parseMediaFilters({ page: "99999999999999999" }).page).toBe(1);
+  });
+  it("conserva búsqueda, formato, idioma y página al compartir la URL", () => {
+    const filters = parseMediaFilters({
+      q: "Fraga & 50%",
+      kind: "image",
+      locale: "gl",
+      sort: "size",
+      page: "3",
+    });
+    const url = new URL(mediaHref("space", filters), "https://example.com");
+    expect(parseMediaFilters(Object.fromEntries(url.searchParams))).toEqual(
+      filters,
+    );
+    expect(url.pathname).toBe("/spaces/space/media");
   });
 });

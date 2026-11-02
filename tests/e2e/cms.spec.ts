@@ -1,3 +1,4 @@
+import { storeAsset } from "../../src/lib/storage";
 import { test, expect, type Page } from "@playwright/test";
 import { pool } from "../../src/lib/database";
 import { rpc, cleanSpaces } from "../helpers";
@@ -335,5 +336,176 @@ test.describe("listado con filtros y paginación del servidor", () => {
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBeLessThanOrEqual(390);
+  });
+});
+
+test.describe("biblioteca paginada", () => {
+  let mediaSpace: string;
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  test.beforeAll(async () => {
+    mediaSpace = await rpc(process.env.ADMIN_ID!, "create_space", {
+      p_name: "Biblioteca paginada",
+      p_slug: `media-e2e-${randomUUID()}`,
+    });
+    await rpc(process.env.ADMIN_ID!, "set_member", {
+      p_space: mediaSpace,
+      p_email: process.env.EDITOR_EMAIL,
+    });
+    for (let i = 1; i <= 13; i++) {
+      const id = randomUUID(),
+        image = i <= 2,
+        mime = image ? "image/png" : "application/pdf",
+        name = `Recurso ${String(i).padStart(2, "0")}.${image ? "png" : "pdf"}`;
+      const bytes = image ? png : Buffer.from("%PDF-1.7\n%%EOF");
+      const url = await storeAsset(mediaSpace, id, bytes, mime);
+      await rpc(process.env.ADMIN_ID!, "register_asset", {
+        p_space: mediaSpace,
+        p_id: id,
+        p_name: name,
+        p_mime: mime,
+        p_size: bytes.length,
+        p_storage_url: url,
+      });
+      if (i === 1)
+        await rpc(process.env.ADMIN_ID!, "update_asset", {
+          p_space: mediaSpace,
+          p_id: id,
+          p_name: name,
+          p_alt: { es: "Bosque", gl: "Fraga" },
+          p_description: {
+            es: "Descripción española",
+            gl: "Portada galega exclusiva",
+          },
+        });
+    }
+  });
+  test.afterAll(async () => {
+    await cleanSpaces(mediaSpace ? [mediaSpace] : []);
+  });
+
+  test("busca por metadatos traducidos y conserva filtros, página e idioma", async ({
+    page,
+  }) => {
+    await login(page);
+    await page.goto(`/spaces/${mediaSpace}/media?locale=gl&sort=name`);
+    await expect(page.locator(".asset-card")).toHaveCount(12);
+    await expect(page.locator(".pagination")).toContainText(
+      "1–12 de 13 archivos",
+    );
+    await page
+      .getByRole("button", { name: "Página siguiente de archivos" })
+      .click();
+    await expect(page).toHaveURL(/page=2/);
+    await expect(page.locator(".asset-card")).toHaveCount(1);
+    await page.reload();
+    await expect(page.locator(".pagination")).toContainText(
+      "13–13 de 13 archivos",
+    );
+    await expect(page.getByLabel("Idioma de los archivos")).toHaveValue("gl");
+    await page.getByLabel("Tipo de archivo").selectOption("image");
+    await expect(page.locator(".asset-card")).toHaveCount(2);
+    expect(new URL(page.url()).searchParams.has("page")).toBe(false);
+    await page.getByLabel("Buscar archivos").fill("Portada galega");
+    await page.getByRole("button", { name: "Buscar", exact: true }).click();
+    await expect(page.locator(".asset-card")).toHaveCount(1);
+    await page.getByRole("button", { name: /Recurso 01.png/ }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(
+      dialog.getByRole("combobox", { name: "Idioma", exact: true }),
+    ).toHaveValue("gl");
+    await dialog.getByLabel("Texto alternativo").fill("Texto alternativo GL");
+    await dialog
+      .getByRole("textbox", { name: "Descripción", exact: true })
+      .fill("Descrición cambiada");
+    await dialog
+      .getByRole("combobox", { name: "Idioma", exact: true })
+      .selectOption("es");
+    await dialog.getByLabel("Texto alternativo").fill("Texto alternativo ES");
+    await dialog.getByRole("button", { name: "Guardar", exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "No encontramos esos archivos" }),
+    ).toBeVisible();
+    await page.getByRole("link", { name: "Limpiar filtros" }).click();
+    await expect(page.locator(".asset-card")).toHaveCount(12);
+    await page.getByRole("button", { name: /Recurso 01.png/ }).click();
+    await expect(dialog.getByLabel("Texto alternativo")).toHaveValue(
+      "Texto alternativo GL",
+    );
+    await dialog
+      .getByRole("combobox", { name: "Idioma", exact: true })
+      .selectOption("es");
+    await expect(dialog.getByLabel("Texto alternativo")).toHaveValue(
+      "Texto alternativo ES",
+    );
+    await page.keyboard.press("Escape");
+    await expect(dialog).not.toBeVisible();
+    await page.goBack();
+    await expect(page.getByLabel("Buscar archivos")).toHaveValue(
+      "Portada galega",
+    );
+    await expect(page.getByLabel("Tipo de archivo")).toHaveValue("image");
+  });
+
+  test("elimina la última página y muestra las subidas aunque hubiera filtros", async ({
+    page,
+  }) => {
+    await login(page);
+    await page.goto(`/spaces/${mediaSpace}/media?sort=name&page=2`);
+    await expect(page.locator(".asset-card")).toHaveCount(1);
+    await page.getByRole("button", { name: /Recurso 13.pdf/ }).click();
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "Eliminar", exact: true }).click();
+    await expect(page.getByRole("dialog")).not.toBeVisible();
+    await expect(page.locator(".pagination")).toContainText(
+      "1–12 de 12 archivos",
+    );
+    expect(new URL(page.url()).searchParams.has("page")).toBe(false);
+    await page.goto(
+      `/spaces/${mediaSpace}/media?q=inexistente&kind=pdf&locale=gl`,
+    );
+    await expect(
+      page.getByRole("heading", { name: "No encontramos esos archivos" }),
+    ).toBeVisible();
+    await page.getByLabel("Seleccionar archivo").setInputFiles({
+      name: "nueva-imagen.png",
+      mimeType: "image/png",
+      buffer: Buffer.alloc(0),
+    });
+    await expect(
+      page.getByRole("alert").filter({ hasText: "hasta 10 MiB" }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Seleccionar archivo")).toHaveValue("");
+    await page.getByLabel("Seleccionar archivo").setInputFiles({
+      name: "nueva-imagen.png",
+      mimeType: "image/png",
+      buffer: png,
+    });
+    await expect(page).toHaveURL(
+      new RegExp(`/spaces/${mediaSpace}/media\\?locale=gl$`),
+    );
+    await expect(
+      page.getByRole("button", { name: /nueva-imagen.png/ }),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "Archivo subido correctamente" }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: test.info().outputPath("biblioteca-desktop.png"),
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(390);
+    await page.screenshot({
+      path: test.info().outputPath("biblioteca-mobile.png"),
+      fullPage: true,
+    });
   });
 });
