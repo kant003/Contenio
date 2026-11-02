@@ -684,6 +684,23 @@ input[type="checkbox"] {
   align-items: center;
   gap: 9px;
 }
+.active-filters {
+  margin: -4px 23px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.active-filters a {
+  color: var(--purple);
+  font-weight: 600;
+}
+.filters > .button {
+  flex-shrink: 0;
+}
 .search-input {
   display: flex;
   align-items: center;

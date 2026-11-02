@@ -191,3 +191,149 @@ test("modelos dinámicos y gestión de accesos desde el panel", async ({
     process.env.OTHER_EMAIL!,
   );
 });
+
+test.describe("listado con filtros y paginación del servidor", () => {
+  let listingSpace: string;
+  test.beforeAll(async () => {
+    listingSpace = await rpc(process.env.ADMIN_ID!, "create_space", {
+      p_name: "Biblioteca de prueba",
+      p_slug: `listado-e2e-${randomUUID()}`,
+    });
+    await rpc(process.env.ADMIN_ID!, "set_member", {
+      p_space: listingSpace,
+      p_email: process.env.EDITOR_EMAIL,
+    });
+    const { rows } = await pool().query(
+      "select id from content_types where space_id=$1",
+      [listingSpace],
+    );
+    for (let i = 1; i <= 17; i++) {
+      const number = String(i).padStart(2, "0");
+      const entry = await rpc(process.env.ADMIN_ID!, "save_entry", {
+        p_space: listingSpace,
+        p_type: rows[0].id,
+        p_id: null,
+        p_version: 0,
+        p_shared: {},
+        p_translations: {
+          es: {
+            title: `Artículo ${number}`,
+            slug: `articulo-${number}`,
+            body: {
+              type: "doc",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [
+                    {
+                      type: "text",
+                      text: "CUERPO_QUE_NO_DEBE_VIAJAR_EN_EL_LISTADO",
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+          gl: {
+            title: `Artigo ${number}`,
+            slug: `artigo-${number}`,
+            body: {
+              type: "doc",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: "Contido de proba" }],
+                },
+              ],
+            },
+          },
+        },
+      });
+      if (i <= 2)
+        await rpc(process.env.ADMIN_ID!, "publish_entry", {
+          p_space: listingSpace,
+          p_id: entry.id,
+          p_locale: "gl",
+          p_version: entry.version,
+        });
+    }
+  });
+  test.afterAll(async () => {
+    await cleanSpaces(listingSpace ? [listingSpace] : []);
+  });
+
+  test("mantiene filtros, idioma y página al recargar, volver y abrir el editor", async ({
+    page,
+  }) => {
+    await login(page);
+    await page.goto(`/spaces/${listingSpace}/content?locale=gl&sort=name`);
+    await expect(page.locator(".entry-table tbody tr")).toHaveCount(12);
+    await expect(page.locator(".pagination")).toContainText(
+      "1–12 de 17 entradas",
+    );
+    const html = await (await page.request.get(page.url())).text();
+    expect(html).not.toContain("CUERPO_QUE_NO_DEBE_VIAJAR_EN_EL_LISTADO");
+    await page.getByRole("button", { name: "Página siguiente" }).click();
+    await expect(page).toHaveURL(/page=2/);
+    await expect(page.locator(".entry-table tbody tr")).toHaveCount(5);
+    await page.getByLabel("Estado", { exact: true }).selectOption("draft");
+    await expect(page).toHaveURL(/status=draft/);
+    expect(new URL(page.url()).searchParams.has("page")).toBe(false);
+    await expect(page.locator(".pagination")).toContainText(
+      "1–12 de 15 entradas",
+    );
+    await page.getByRole("button", { name: "Página siguiente" }).click();
+    await expect(page.locator(".entry-table tbody tr")).toHaveCount(3);
+    await page.reload();
+    await expect(page.getByLabel("Estado", { exact: true })).toHaveValue(
+      "draft",
+    );
+    await expect(page.getByLabel("Idioma del listado")).toHaveValue("gl");
+    await expect(page.locator(".pagination")).toContainText(
+      "13–15 de 15 entradas",
+    );
+    await page.goBack();
+    await expect(page.locator(".pagination")).toContainText(
+      "1–12 de 15 entradas",
+    );
+    await page.getByLabel("Buscar contenido").fill("Artigo 17");
+    await page.getByRole("button", { name: "Buscar", exact: true }).click();
+    await expect(page.locator(".entry-table tbody tr")).toHaveCount(1);
+    await page
+      .getByRole("link", { name: "Editar Artigo 17", exact: true })
+      .click();
+    await expect(page).toHaveURL(/locale=gl/);
+    await expect(page.locator("#field-title")).toHaveValue("Artigo 17");
+    await page.goBack();
+    await expect(page.getByLabel("Buscar contenido")).toHaveValue("Artigo 17");
+    await page.getByRole("link", { name: "Limpiar filtros" }).click();
+    await expect(page.locator(".pagination")).toContainText(
+      "1–12 de 17 entradas",
+    );
+    await expect(page.getByLabel("Idioma del listado")).toHaveValue("gl");
+  });
+
+  test("resuelve páginas fuera de rango y ofrece salida a búsquedas vacías", async ({
+    page,
+  }) => {
+    await login(page);
+    await page.goto(`/spaces/${listingSpace}/content?page=999999`);
+    await expect(page).toHaveURL(/page=2/);
+    await expect(page.locator(".entry-table tbody tr")).toHaveCount(5);
+    await page.getByLabel("Buscar contenido").fill("No existe esta entrada");
+    await page.getByLabel("Buscar contenido").press("Enter");
+    await expect(
+      page.getByRole("heading", { name: "No encontramos ese contenido" }),
+    ).toBeVisible();
+    await expect(page.locator(".pagination")).toContainText("Sin entradas");
+    await expect(
+      page.getByRole("button", { name: "Página siguiente" }),
+    ).toBeDisabled();
+    await page.getByRole("link", { name: "Limpiar filtros" }).click();
+    await expect(page.locator(".entry-table tbody tr")).toHaveCount(12);
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(390);
+  });
+});

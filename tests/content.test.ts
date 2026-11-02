@@ -1,3 +1,4 @@
+import { parseContentFilters, contentHref } from "../src/lib/content-filters";
 import { describe, it, expect } from "vitest";
 import { hasContent } from "../src/lib/content-validation";
 import {
@@ -78,4 +79,39 @@ describe("contenido seguro", () => {
   });
   it("normaliza identificadores legibles", () =>
     expect(slugify("  Unha páxina, aquí! ")).toBe("unha-paxina-aqui"));
+});
+
+describe("filtros del listado", () => {
+  it("normaliza parámetros repetidos o manipulados y limita la búsqueda", () => {
+    const filters = parseContentFilters({
+      q: " " + "a".repeat(300),
+      type: "invalido",
+      status: "__proto__",
+      locale: ["gl", "es"],
+      sort: "sql",
+      page: "999999999999999999",
+    });
+    expect(filters).toMatchObject({
+      q: "a".repeat(256),
+      type: "",
+      status: "",
+      locale: "gl",
+      sort: "updated",
+      page: 1,
+    });
+  });
+  it("conserva filtros al compartir URL y codifica caracteres especiales", () => {
+    const filters = parseContentFilters({
+      q: "Páxina & 50%",
+      locale: "gl",
+      status: "changed",
+      sort: "name",
+      page: "3",
+    });
+    const url = new URL(contentHref("space", filters), "https://example.com");
+    expect(parseContentFilters(Object.fromEntries(url.searchParams))).toEqual(
+      filters,
+    );
+    expect(url.pathname).toBe("/spaces/space/content");
+  });
 });

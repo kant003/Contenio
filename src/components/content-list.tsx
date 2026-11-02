@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useTransition, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowDown,
@@ -10,58 +11,50 @@ import {
   Globe2,
   Plus,
   Search,
-  SlidersHorizontal,
+  LoaderCircle,
 } from "lucide-react";
-import type { ContentType, Entry, Locale, Publication } from "@/lib/types";
-import { dateLabel, statusOf, titleOf } from "@/lib/utils";
+import type { ContentType } from "@/lib/types";
+import {
+  CONTENT_PAGE_SIZE,
+  contentStatuses,
+  contentHref,
+  parseContentFilters,
+  type ContentPage,
+  type ContentFilters,
+} from "@/lib/content-filters";
+import { dateLabel } from "@/lib/utils";
 import { Button } from "./ui/button";
 export function ContentList({
   space,
-  entries,
+  result,
   types,
-  publications,
+  filters,
 }: {
   space: string;
-  entries: Entry[];
+  result: ContentPage;
   types: ContentType[];
-  publications: Publication[];
+  filters: ContentFilters;
 }) {
-  const [query, setQuery] = useState(""),
-    [type, setType] = useState(""),
-    [status, setStatus] = useState(""),
-    [locale, setLocale] = useState<Locale>("es"),
-    [page, setPage] = useState(0),
-    [sort, setSort] = useState("updated");
-  const filtered = entries
-    .filter((e) => {
-      const t = types.find((t) => t.id === e.content_type_id);
-      return (
-        t &&
-        (!type || t.id === type) &&
-        (!status || statusOf(e, t, publications, locale) === status) &&
-        titleOf(e, t, locale).toLowerCase().includes(query.toLowerCase())
-      );
-    })
-    .sort((a, b) =>
-      sort === "name"
-        ? titleOf(
-            a,
-            types.find((t) => t.id === a.content_type_id),
-            locale,
-          ).localeCompare(
-            titleOf(
-              b,
-              types.find((t) => t.id === b.content_type_id),
-              locale,
-            ),
-          )
-        : b.updated_at.localeCompare(a.updated_at),
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const { items, total, page, stats } = result;
+  const { locale } = filters;
+  const pageCount = Math.max(1, Math.ceil(total / CONTENT_PAGE_SIZE));
+  const navigate = (next: ContentFilters) =>
+    startTransition(() => {
+      router.push(contentHref(space, next), { scroll: false });
+    });
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    navigate(
+      parseContentFilters(
+        Object.fromEntries(
+          [...form].map(([key, value]) => [key, String(value)]),
+        ),
+      ),
     );
-  const published = entries.filter((e) =>
-    publications.some((p) => p.entry_id === e.id),
-  ).length;
-  const pageCount = Math.max(1, Math.ceil(filtered.length / 12)),
-    current = Math.min(page, pageCount - 1);
+  };
   return (
     <>
       <div className="page-heading">
@@ -87,7 +80,7 @@ export function ContentList({
               types.map((t) => (
                 <Link
                   key={t.id}
-                  href={`/spaces/${space}/content/new?type=${t.id}`}
+                  href={`/spaces/${space}/content/new?type=${t.id}&locale=${locale}`}
                 >
                   <FileText size={16} />
                   {t.name}
@@ -108,7 +101,7 @@ export function ContentList({
           <div>
             <small>Total de entradas</small>
             <strong>
-              {entries.length}
+              {stats.total}
               <span>en este espacio</span>
             </strong>
           </div>
@@ -120,7 +113,7 @@ export function ContentList({
           <div>
             <small>Con publicación</small>
             <strong>
-              {published}
+              {stats.published}
               <span>listas para conectar</span>
             </strong>
           </div>
@@ -132,87 +125,124 @@ export function ContentList({
           <div>
             <small>Solo borradores</small>
             <strong>
-              {entries.length - published}
+              {stats.drafts}
               <span>ideas en marcha</span>
             </strong>
           </div>
         </div>
       </div>
-      <section className="content-panel">
+      <section
+        className="content-panel"
+        aria-label="Listado de contenido"
+        aria-busy={pending}
+      >
         <div className="panel-title">
           <div>
             <h2>
-              Todas las entradas <span className="count">{entries.length}</span>
+              Todas las entradas <span className="count">{total}</span>
             </h2>
             <p>Un buen contenido empieza con una buena idea.</p>
           </div>
-          <div className="row">
-            <span className="status-dot" />
-            <small className="muted">Todo en su sitio</small>
+          <div className="row" role="status" aria-live="polite">
+            {pending ? (
+              <LoaderCircle size={14} className="spin" />
+            ) : (
+              <span className="status-dot" />
+            )}
+            <small className="muted">
+              {pending
+                ? "Buscando contenido…"
+                : `${total} ${total === 1 ? "entrada encontrada" : "entradas encontradas"}`}
+            </small>
           </div>
         </div>
-        <div className="filters">
+        <form
+          className="filters"
+          method="get"
+          action={`/spaces/${space}/content`}
+          onSubmit={submit}
+        >
           <div className="search-input">
-            <Search size={17} />
+            <Search size={17} aria-hidden="true" />
             <input
+              name="q"
+              type="search"
               aria-label="Buscar contenido"
-              placeholder="Buscar por título…"
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setPage(0);
-              }}
+              placeholder="Buscar por título o slug…"
+              defaultValue={filters.q}
+              maxLength={256}
             />
           </div>
           <select
+            name="type"
             aria-label="Tipo de contenido"
-            value={type}
-            onChange={(e) => {
-              setType(e.target.value);
-              setPage(0);
-            }}
+            defaultValue={filters.type}
+            disabled={pending}
+            onChange={(event) => event.currentTarget.form?.requestSubmit()}
           >
             <option value="">Todos los modelos</option>
-            {types.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
+            {types.map((type) => (
+              <option key={type.id} value={type.id}>
+                {type.name}
               </option>
             ))}
           </select>
           <select
+            name="status"
             aria-label="Estado"
-            value={status}
-            onChange={(e) => {
-              setStatus(e.target.value);
-              setPage(0);
-            }}
+            defaultValue={filters.status}
+            disabled={pending}
+            onChange={(event) => event.currentTarget.form?.requestSubmit()}
           >
             <option value="">Todos los estados</option>
-            {["Borrador", "Publicado", "Cambios pendientes"].map((s) => (
-              <option key={s}>{s}</option>
+            {Object.entries(contentStatuses).map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
             ))}
           </select>
           <select
+            name="locale"
             aria-label="Idioma del listado"
-            value={locale}
-            onChange={(e) => {
-              setLocale(e.target.value as Locale);
-              setPage(0);
-            }}
+            defaultValue={locale}
+            disabled={pending}
+            onChange={(event) => event.currentTarget.form?.requestSubmit()}
           >
             <option value="es">Español</option>
             <option value="gl">Galego</option>
           </select>
           <select
+            name="sort"
             aria-label="Ordenar"
-            value={sort}
-            onChange={(e) => setSort(e.target.value)}
+            defaultValue={filters.sort}
+            disabled={pending}
+            onChange={(event) => event.currentTarget.form?.requestSubmit()}
           >
             <option value="updated">Más recientes</option>
             <option value="name">Título A–Z</option>
           </select>
-          <SlidersHorizontal size={16} className="filter-icon" />
-        </div>
+          <Button type="submit" variant="outline" size="sm" disabled={pending}>
+            Buscar
+          </Button>
+        </form>
+        {(filters.q || filters.type || filters.status) && (
+          <div className="active-filters">
+            <span>Filtros aplicados{filters.q ? ` · «${filters.q}»` : ""}</span>
+            <Link
+              href={contentHref(space, {
+                ...filters,
+                q: "",
+                type: "",
+                status: "",
+                page: 1,
+              })}
+              prefetch={false}
+              scroll={false}
+            >
+              Limpiar filtros
+            </Link>
+          </div>
+        )}
         <div className="table-scroll">
           <table className="entry-table">
             <thead>
@@ -229,14 +259,15 @@ export function ContentList({
               </tr>
             </thead>
             <tbody>
-              {filtered.slice(current * 12, current * 12 + 12).map((e) => {
+              {items.map((e) => {
                 const t = types.find((t) => t.id === e.content_type_id)!;
-                const st = statusOf(e, t, publications, locale);
+                const st = contentStatuses[e.status];
                 return (
                   <tr key={e.id}>
                     <td>
                       <Link
-                        href={`/spaces/${space}/content/${e.id}`}
+                        href={`/spaces/${space}/content/${e.id}?locale=${locale}`}
+                        prefetch={false}
                         className="entry-title"
                       >
                         <span
@@ -245,14 +276,8 @@ export function ContentList({
                           <FileText size={17} />
                         </span>
                         <span>
-                          <strong>{titleOf(e, t, locale)}</strong>
-                          <small>
-                            {String(
-                              e.translations[locale]?.slug ??
-                                e.shared.slug ??
-                                "Sin slug",
-                            )}
-                          </small>
+                          <strong>{e.title}</strong>
+                          <small>{e.slug}</small>
                         </span>
                       </Link>
                     </td>
@@ -270,9 +295,10 @@ export function ContentList({
                     <td className="date-cell">{dateLabel(e.updated_at)}</td>
                     <td>
                       <Link
-                        aria-label={`Editar ${titleOf(e, t, locale)}`}
+                        aria-label={`Editar ${e.title}`}
                         className="table-arrow"
-                        href={`/spaces/${space}/content/${e.id}`}
+                        href={`/spaces/${space}/content/${e.id}?locale=${locale}`}
+                        prefetch={false}
                       >
                         <ArrowUpRight size={17} />
                       </Link>
@@ -283,18 +309,18 @@ export function ContentList({
             </tbody>
           </table>
         </div>
-        {!filtered.length && (
+        {!items.length && (
           <div className="empty">
             <span className="empty-icon">
               <FileText size={27} />
             </span>
             <h3>
-              {entries.length
+              {stats.total
                 ? "No encontramos ese contenido"
                 : "Tu próxima idea empieza aquí"}
             </h3>
             <p>
-              {entries.length
+              {stats.total
                 ? "Prueba con otro título o cambia los filtros."
                 : "Crea tu primera entrada para darle forma."}
             </p>
@@ -302,8 +328,8 @@ export function ContentList({
         )}
         <div className="pagination">
           <span>
-            {filtered.length
-              ? `${current * 12 + 1}–${Math.min((current + 1) * 12, filtered.length)} de ${filtered.length} entradas`
+            {total
+              ? `${(page - 1) * CONTENT_PAGE_SIZE + 1}–${Math.min(page * CONTENT_PAGE_SIZE, total)} de ${total} entradas`
               : "Sin entradas"}
           </span>
           <div className="row">
@@ -311,20 +337,20 @@ export function ContentList({
               variant="outline"
               size="icon"
               aria-label="Página anterior"
-              disabled={!current}
-              onClick={() => setPage(current - 1)}
+              disabled={pending || page === 1}
+              onClick={() => navigate({ ...filters, page: page - 1 })}
             >
               <ChevronLeft size={16} />
             </Button>
             <span>
-              {current + 1} / {pageCount}
+              {page} / {pageCount}
             </span>
             <Button
               variant="outline"
               size="icon"
               aria-label="Página siguiente"
-              disabled={current >= pageCount - 1}
-              onClick={() => setPage(current + 1)}
+              disabled={pending || page >= pageCount}
+              onClick={() => navigate({ ...filters, page: page + 1 })}
             >
               <ChevronRight size={16} />
             </Button>

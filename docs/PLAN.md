@@ -40,3 +40,13 @@ Los cambios se comitean en ramas `codex/...`. No se hace push ni despliegue sin 
 - Archivos de entorno y contenido subido excluidos de Git. No se ha hecho push.
 
 La validación de Neon, Blob y SMTP en producción continúa pendiente: las pruebas locales no sustituyen esa comprobación tras conectar Vercel. La biblioteca local usa disco privado; el adaptador de Blob se comprobará contra un almacén privado real antes de desplegar para clientes.
+
+## Avance: listado con consultas paginadas en PostgreSQL
+
+- Hasta 12 resúmenes por página; búsqueda literal por título/slug, modelo, estado del idioma y ordenación estable.
+- Filtros, ES/GL, orden y página en la URL. Recargar, compartir y volver atrás mantienen la selección; abrir o crear una entrada conserva el idioma.
+- Indicador de búsqueda, limpieza de filtros y páginas fuera de rango resueltas sin errores. Los contadores globales del espacio permanecen separados del número de resultados.
+- Modelos y Ajustes ya no consultan entradas, publicaciones ni archivos; el listado no envía sus cuerpos o snapshots al navegador.
+- 8 pruebas unitarias, 41 comprobaciones de integración existentes y 22 nuevas, más 6 pruebas Playwright sobre producción local: todo correcto. Tipos, ESLint y build correctos.
+
+Próximas mejoras locales: paginar la biblioteca y los selectores de referencias; verificar de principio a fin los flujos de recuperación de cuenta con el buzón local. La conexión y validación real de Neon/Blob continúa pendiente del acceso a Vercel.

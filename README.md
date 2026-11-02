@@ -73,7 +73,9 @@ La API usa una conexión privilegiada únicamente después de validar la clave d
 
 En Vercel los archivos se suben directamente a Blob con autorización por espacio para respetar su límite de tamaño de las peticiones a funciones. Antes de registrarlos se verifica su contenido real. Una subida interrumpida antes de registrarse puede dejar un objeto huérfano que requiere limpieza.
 
-El panel inicial filtra y pagina en el navegador después de cargar las entradas autorizadas; para grandes espacios convendrá trasladarlo al servidor. La API ya filtra y pagina en PostgreSQL.
+El listado busca por título o slug y filtra por modelo, estado e idioma desde PostgreSQL. Entrega hasta 12 resúmenes por página, sin cargar cuerpos enriquecidos ni snapshots en el navegador. Los filtros, el orden y la página se conservan en la URL; el editor se abre en el idioma seleccionado. Las estadísticas muestran el total del espacio y el contador del listado muestra los resultados filtrados.
+
+Escribe una búsqueda y pulsa Buscar o Enter. Cambiar un selector aplica los filtros y vuelve a la primera página. «Limpiar filtros» conserva el idioma y el orden. La API también filtra y pagina en PostgreSQL. Los selectores de referencias del editor y la biblioteca de archivos aún cargan todas las opciones autorizadas; su paginación queda para un próximo avance.
 
 ## Despliegue
 
