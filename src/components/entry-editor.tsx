@@ -32,14 +32,20 @@ import { Button } from "./ui/button";
 import { Input, Textarea } from "./ui/input";
 import { RichText } from "./rich-text";
 import { RichRenderer } from "./rich-renderer";
+import { ResourceField } from "./resource-picker";
+import {
+  assetItem,
+  itemLabel,
+  mergeItems,
+  type PickerItem,
+} from "@/lib/picker-types";
 import { hasContent } from "@/lib/content-validation";
 export function EntryEditor({
   space,
   initial,
   type,
-  assets,
-  entries,
-  types,
+  assets: initialAssets,
+  entryChoices: initialChoices,
   publications,
   initialLocale = "es",
 }: {
@@ -47,12 +53,13 @@ export function EntryEditor({
   initial?: Entry;
   type: ContentType;
   assets: Asset[];
-  entries: Entry[];
-  types: ContentType[];
+  entryChoices: PickerItem[];
   publications: Publication[];
   initialLocale?: Locale;
 }) {
   const router = useRouter();
+  const [assets, setAssets] = useState(initialAssets);
+  const [entryChoices, setEntryChoices] = useState(initialChoices);
   const [draft, setDraft] = useState({
     shared: initial?.shared ?? {},
     translations: initial?.translations ?? { es: {}, gl: {} },
@@ -388,6 +395,26 @@ export function EntryEditor({
                             assets={assets}
                             locale={locale}
                           />
+                        ) : f.type === "reference" ||
+                          f.type === "references" ? (
+                          <p>
+                            {(Array.isArray(v)
+                              ? v
+                              : typeof v === "string"
+                                ? [v]
+                                : []
+                            )
+                              .map(String)
+                              .map((id) => {
+                                const item = entryChoices.find(
+                                  (item) => item.id === id,
+                                );
+                                return item
+                                  ? itemLabel(item, locale)
+                                  : "Entrada no disponible";
+                              })
+                              .join(", ") || "—"}
+                          </p>
                         ) : (
                           <p>
                             {typeof v === "object"
@@ -434,6 +461,13 @@ export function EntryEditor({
                           value={value}
                           onChange={set}
                           assets={assets}
+                          space={space}
+                          locale={locale}
+                          onAssets={(incoming) =>
+                            setAssets((current) =>
+                              mergeItems(current, incoming),
+                            )
+                          }
                         />
                       ) : f.type === "long_text" ? (
                         <Textarea
@@ -453,18 +487,28 @@ export function EntryEditor({
                         </label>
                       ) : f.type === "asset" ? (
                         <>
-                          <select
+                          <ResourceField
                             id={inputId}
-                            value={String(value ?? "")}
-                            onChange={(e) => set(e.target.value || null)}
-                          >
-                            <option value="">Selecciona un archivo</option>
-                            {assets.map((a) => (
-                              <option value={a.id} key={a.id}>
-                                {a.name}
-                              </option>
-                            ))}
-                          </select>
+                            label={f.name}
+                            space={space}
+                            kind="asset"
+                            locale={locale}
+                            values={
+                              typeof value === "string" && value ? [value] : []
+                            }
+                            items={assets.map(assetItem)}
+                            onChange={(ids, chosen) => {
+                              setAssets((current) =>
+                                mergeItems(
+                                  current,
+                                  chosen.flatMap((item) =>
+                                    item.asset ? [item.asset] : [],
+                                  ),
+                                ),
+                              );
+                              set(ids[0] ?? null);
+                            }}
+                          />
                           <AssetPreview
                             id={String(value ?? "")}
                             assets={assets}
@@ -472,41 +516,33 @@ export function EntryEditor({
                           />
                         </>
                       ) : f.type === "reference" || f.type === "references" ? (
-                        <select
+                        <ResourceField
                           id={inputId}
+                          label={f.name}
+                          space={space}
+                          kind="entry"
+                          locale={locale}
                           multiple={f.type === "references"}
-                          value={
+                          exclude={persistedId}
+                          values={
                             f.type === "references"
                               ? Array.isArray(value)
                                 ? value.map(String)
                                 : []
-                              : String(value ?? "")
+                              : typeof value === "string" && value
+                                ? [value]
+                                : []
                           }
-                          onChange={(e) =>
+                          items={entryChoices}
+                          onChange={(ids, chosen) => {
+                            setEntryChoices((current) =>
+                              mergeItems(current, chosen),
+                            );
                             set(
-                              f.type === "references"
-                                ? Array.from(e.target.selectedOptions).map(
-                                    (o) => o.value,
-                                  )
-                                : e.target.value || null,
-                            )
-                          }
-                        >
-                          {f.type === "reference" && (
-                            <option value="">Selecciona una entrada</option>
-                          )}
-                          {entries
-                            .filter((e) => e.id !== persistedId)
-                            .map((e) => (
-                              <option key={e.id} value={e.id}>
-                                {titleOf(
-                                  e,
-                                  types.find((t) => t.id === e.content_type_id),
-                                  locale,
-                                )}
-                              </option>
-                            ))}
-                        </select>
+                              f.type === "references" ? ids : (ids[0] ?? null),
+                            );
+                          }}
+                        />
                       ) : (
                         <Input
                           id={inputId}

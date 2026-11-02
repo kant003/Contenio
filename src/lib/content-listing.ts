@@ -10,6 +10,7 @@ export async function getContentPage(
   userId: string,
   spaceId: string,
   filters: ContentFilters,
+  excludeId?: string,
 ): Promise<ContentPage> {
   const rows = await userQuery<ContentPage>(
     userId,
@@ -38,7 +39,7 @@ export async function getContentPage(
         cross join lateral (select e.shared || coalesce(e.translations->$2,'{}'::jsonb) as fields) v
         where (f->>'active')::boolean and v.fields ? (f->>'key')
       ) active
-      where e.space_id=$1
+      where e.space_id=$1 and ($9::uuid is null or e.id<>$9::uuid)
     ), filtered as materialized (
       select * from summaries
       where ($3='' or strpos(lower(title),lower($3))>0 or strpos(lower(slug),lower($3))>0)
@@ -70,6 +71,7 @@ export async function getContentPage(
       filters.sort,
       filters.page,
       CONTENT_PAGE_SIZE,
+      excludeId ?? null,
     ],
   );
   return rows[0];

@@ -17,7 +17,9 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "./ui/button";
-import type { Asset, Json } from "@/lib/types";
+import { ResourcePicker } from "./resource-picker";
+import { assetItem } from "@/lib/picker-types";
+import type { Asset, Json, Locale } from "@/lib/types";
 import { safeHref } from "@/lib/utils";
 const AssetImage = Image.extend({
   addAttributes() {
@@ -65,12 +67,19 @@ export function RichText({
   onChange,
   assets,
   label,
+  space,
+  locale,
+  onAssets,
 }: {
   value: Json | undefined;
   onChange: (v: Json) => void;
   assets: Asset[];
   label: string;
+  space: string;
+  locale: Locale;
+  onAssets: (assets: Asset[]) => void;
 }) {
+  const [imageOpen, setImageOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false),
     [href, setHref] = useState("");
   const editor = useEditor({
@@ -177,31 +186,15 @@ export function RichText({
         >
           <Link2 size={16} />
         </button>
-        <label className="image-insert" title="Insertar imagen">
+        <button
+          type="button"
+          aria-label="Insertar imagen de la biblioteca"
+          title="Insertar imagen"
+          aria-haspopup="dialog"
+          onClick={() => setImageOpen(true)}
+        >
           <ImagePlus size={16} />
-          <select
-            aria-label="Insertar imagen de la biblioteca"
-            value=""
-            onChange={(e) => {
-              const a = assets.find((a) => a.id === e.target.value);
-              if (a)
-                editor
-                  .chain()
-                  .focus()
-                  .setImage({ src: a.url ?? "", alt: "", ...{ assetId: a.id } })
-                  .run();
-            }}
-          >
-            <option value="">Insertar imagen</option>
-            {assets
-              .filter((a) => a.mime.startsWith("image/"))
-              .map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-          </select>
-        </label>
+        </button>
         <span className="toolbar-spacer" />
         <button
           type="button"
@@ -259,6 +252,31 @@ export function RichText({
             Quitar
           </Button>
         </div>
+      )}
+      {imageOpen && (
+        <ResourcePicker
+          space={space}
+          kind="image"
+          locale={locale}
+          values={[]}
+          items={assets.map(assetItem)}
+          onClose={() => setImageOpen(false)}
+          onConfirm={(_ids, items) => {
+            const asset = items[0]?.asset;
+            if (!asset) return;
+            onAssets([asset]);
+            setImageOpen(false);
+            editor
+              .chain()
+              .setImage({
+                src: asset.url ?? "",
+                alt: "",
+                ...{ assetId: asset.id },
+              })
+              .run();
+            requestAnimationFrame(() => editor.commands.focus());
+          }}
+        />
       )}
       <EditorContent editor={editor} />
       <div className="editor-wordcount">

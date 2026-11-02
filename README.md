@@ -75,11 +75,15 @@ En Vercel los archivos se suben directamente a Blob con autorización por espaci
 
 El listado busca por título o slug y filtra por modelo, estado e idioma desde PostgreSQL. Entrega hasta 12 resúmenes por página, sin cargar cuerpos enriquecidos ni snapshots en el navegador. Los filtros, el orden y la página se conservan en la URL; el editor se abre en el idioma seleccionado. Las estadísticas muestran el total del espacio y el contador del listado muestra los resultados filtrados.
 
-Escribe una búsqueda y pulsa Buscar o Enter. Cambiar un selector aplica los filtros y vuelve a la primera página. «Limpiar filtros» conserva el idioma y el orden. La API también filtra y pagina en PostgreSQL. Los selectores de referencias y archivos dentro del editor aún cargan todas las opciones autorizadas; su paginación queda para un próximo avance.
+Escribe una búsqueda y pulsa Buscar o Enter. Cambiar un selector aplica los filtros y vuelve a la primera página. «Limpiar filtros» conserva el idioma y el orden. La API también filtra y pagina en PostgreSQL. Los selectores del editor también buscan y paginan en el servidor.
 
 La biblioteca de archivos también entrega hasta 12 recursos por página. Permite buscar por nombre, descripción y texto alternativo en el idioma elegido, filtrar imágenes/PDF y ordenar por nombre, tamaño o fecha de subida. Los filtros quedan en la URL y las estadísticas muestran cantidad y tamaño total de los archivos registrados en el espacio. Ese tamaño no incluye objetos huérfanos ni otros espacios y no sustituye la medición de consumo de Vercel Blob.
 
 Al subir un archivo se vuelve a los recientes, conservando el idioma, para que los filtros anteriores no oculten la subida. El diálogo de metadatos se abre en el idioma seleccionado. Eliminar el último archivo de una página vuelve automáticamente a una página válida. Las URLs privadas se generan solo para los archivos de la página visible.
+
+En el editor, los botones de archivos y relaciones abren un selector con búsqueda y hasta 12 resultados por página. Las relaciones múltiples conservan la selección al buscar o cambiar de página; «Usar selección» confirma los cambios y «Cancelar» o Escape los descartan. Puedes desmarcar todas las referencias para vaciar la lista. Las imágenes de Tiptap usan el mismo selector, mostrando solo imágenes.
+
+La carga inicial del editor consulta únicamente la entrada abierta y los recursos que ya utiliza, en ambos idiomas. Las etiquetas de las referencias se recuperan sin sus cuerpos. El endpoint interno `/api/editor/spaces/{spaceId}/choices` requiere una sesión de editor o administrador y permisos sobre el espacio; no acepta claves públicas de lectura. Sus respuestas son privadas y no se almacenan en caché. Las búsquedas se pueden reintentar sin modificar el borrador.
 
 ## Despliegue
 

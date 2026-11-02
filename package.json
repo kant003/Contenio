@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:integration": "tsx tests/integration.ts && tsx tests/content-list.integration.ts && tsx tests/media-list.integration.ts",
+    "test:integration": "tsx tests/integration.ts && tsx tests/content-list.integration.ts && tsx tests/media-list.integration.ts && tsx tests/editor-resources.integration.ts",
     "test:e2e": "playwright test",
     "db:start": "docker compose up -d --wait",
     "db:seed": "tsx scripts/seed.ts",

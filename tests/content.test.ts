@@ -1,3 +1,4 @@
+import { pickerQuerySchema, mergeItems } from "../src/lib/picker-types";
 import { parseMediaFilters, mediaHref } from "../src/lib/media-filters";
 import { parseContentFilters, contentHref } from "../src/lib/content-filters";
 import { describe, it, expect } from "vitest";
@@ -150,5 +151,40 @@ describe("filtros de archivos", () => {
       filters,
     );
     expect(url.pathname).toBe("/spaces/space/media");
+  });
+});
+
+describe("selectores del editor", () => {
+  it("rechaza búsquedas manipuladas y permite consultas acotadas", () => {
+    for (const query of [
+      { kind: "user" },
+      { kind: "entry", exclude: "sin-uuid" },
+      { kind: "image", page: 0 },
+      { kind: "asset", page: 1.5 },
+      { kind: "asset", q: "a".repeat(257) },
+      { kind: "entry", locale: "en" },
+    ])
+      expect(pickerQuerySchema.safeParse(query).success).toBe(false);
+    expect(
+      pickerQuerySchema.parse({ kind: "image", page: "2", q: " Fraga " }),
+    ).toMatchObject({ kind: "image", page: 2, q: "Fraga", locale: "es" });
+  });
+  it("actualiza etiquetas sin perder selecciones de otras páginas", () => {
+    expect(
+      mergeItems(
+        [
+          { id: "a", label: "Anterior" },
+          { id: "b", label: "Conservar" },
+        ],
+        [
+          { id: "a", label: "Actualizado" },
+          { id: "c", label: "Nuevo" },
+        ],
+      ),
+    ).toEqual([
+      { id: "a", label: "Actualizado" },
+      { id: "b", label: "Conservar" },
+      { id: "c", label: "Nuevo" },
+    ]);
   });
 });

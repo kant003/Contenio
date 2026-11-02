@@ -76,8 +76,17 @@ test("crear, traducir, subir imagen, publicar y consultar la API", async ({
     [space],
   );
   await page
-    .getByLabel("Insertar imagen de la biblioteca")
-    .selectOption(assets![0].id);
+    .getByRole("button", { name: "Insertar imagen de la biblioteca" })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("radio", { name: "Seleccionar prueba-e2e.png", exact: true })
+    .check();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Usar selección", exact: true })
+    .click();
+  await expect(page.locator(".tiptap img")).toHaveCount(1);
   await page.getByRole("button", { name: "GL", exact: true }).click();
   await page.locator("#field-title").fill("Páxina de proba");
   await page.locator("#field-slug").fill("paxina-proba");
@@ -507,5 +516,287 @@ test.describe("biblioteca paginada", () => {
       path: test.info().outputPath("biblioteca-mobile.png"),
       fullPage: true,
     });
+  });
+});
+
+test.describe("selectores del editor", () => {
+  let pickerSpace: string, pickerModel: string;
+  test.beforeAll(async () => {
+    pickerSpace = await rpc(process.env.ADMIN_ID!, "create_space", {
+      p_name: "Selección de recursos",
+      p_slug: `picker-e2e-${randomUUID()}`,
+    });
+    await rpc(process.env.ADMIN_ID!, "set_member", {
+      p_space: pickerSpace,
+      p_email: process.env.EDITOR_EMAIL,
+    });
+    const { rows } = await pool().query(
+      "select * from content_types where space_id=$1",
+      [pickerSpace],
+    );
+    pickerModel = rows[0].id;
+    const extra = [
+      { key: "related", name: "Relacionadas", type: "references" },
+      { key: "featured", name: "Destacada", type: "reference" },
+      { key: "cover", name: "Portada", type: "asset" },
+    ].map((f) => ({
+      ...f,
+      localized: false,
+      required: false,
+      active: true,
+      help: "",
+    }));
+    await rpc(process.env.ADMIN_ID!, "save_content_type", {
+      p_space: pickerSpace,
+      p_id: pickerModel,
+      p_key: "page",
+      p_name: "Página",
+      p_description: "",
+      p_fields: [...rows[0].fields, ...extra],
+    });
+    for (let i = 1; i <= 26; i++) {
+      const n = String(i).padStart(2, "0");
+      await rpc(process.env.ADMIN_ID!, "save_entry", {
+        p_space: pickerSpace,
+        p_type: pickerModel,
+        p_id: null,
+        p_version: 0,
+        p_shared: {},
+        p_translations: {
+          es: {
+            title: `Entrada ${n}`,
+            slug: `entrada-${n}`,
+            body: {
+              type: "doc",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [
+                    {
+                      type: "text",
+                      text: "CUERPO_AJENO_NO_DESCARGAR_EN_EDITOR",
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+          gl: { title: `Entrada galega ${n}`, slug: `entrada-gl-${n}` },
+        },
+      });
+    }
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    for (let i = 1; i <= 14; i++) {
+      const id = randomUUID(),
+        image = i < 14,
+        mime = image ? "image/png" : "application/pdf";
+      const bytes = image ? png : Buffer.from("%PDF-1.7\n%%EOF");
+      const storage = await storeAsset(pickerSpace, id, bytes, mime);
+      await rpc(process.env.ADMIN_ID!, "register_asset", {
+        p_space: pickerSpace,
+        p_id: id,
+        p_name: image
+          ? `Imagen ${String(i).padStart(2, "0")}.png`
+          : "Documento.pdf",
+        p_mime: mime,
+        p_size: bytes.length,
+        p_storage_url: storage,
+      });
+    }
+  });
+  test.afterAll(async () => {
+    await cleanSpaces(pickerSpace ? [pickerSpace] : []);
+  });
+
+  test("conserva selecciones entre páginas, cancela cambios y guarda referencias e imágenes", async ({
+    page,
+  }) => {
+    await login(page);
+    await page.goto(`/spaces/${pickerSpace}/content/new?type=${pickerModel}`);
+    const html = await (await page.request.get(page.url())).text();
+    expect(html).not.toContain("CUERPO_AJENO_NO_DESCARGAR_EN_EDITOR");
+    expect(html).not.toContain("Imagen 07.png");
+    await page.locator("#field-title").fill("Página principal");
+    await page.locator("#field-slug").fill("principal");
+    await page
+      .locator('.tiptap[aria-label="Contenido"]')
+      .fill("Borrador que sigue en el editor.");
+    await page.locator("#field-related").click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("checkbox")).toHaveCount(12);
+    await dialog
+      .getByRole("checkbox", { name: "Seleccionar Entrada 01", exact: true })
+      .check();
+    await dialog
+      .getByRole("button", { name: "Página siguiente del selector" })
+      .click();
+    await dialog
+      .getByRole("checkbox", { name: "Seleccionar Entrada 13", exact: true })
+      .check();
+    await dialog
+      .getByRole("button", { name: "Página siguiente del selector" })
+      .click();
+    await dialog
+      .getByRole("checkbox", { name: "Seleccionar Entrada 26", exact: true })
+      .check();
+    await dialog
+      .getByRole("button", { name: "Usar selección (3)", exact: true })
+      .click();
+    const related = page.getByRole("list", {
+      name: "Selección de Relacionadas",
+    });
+    await expect(related.getByRole("listitem")).toHaveCount(3);
+    await page.locator("#field-related").click();
+    await expect(
+      dialog.getByRole("checkbox", {
+        name: "Seleccionar Entrada 01",
+        exact: true,
+      }),
+    ).toBeChecked();
+    await dialog
+      .getByRole("checkbox", { name: "Seleccionar Entrada 01", exact: true })
+      .uncheck();
+    await dialog.getByRole("button", { name: "Cancelar", exact: true }).click();
+    await expect(related.getByRole("listitem")).toHaveCount(3);
+    await page.locator("#field-featured").click();
+    await dialog
+      .getByRole("searchbox", { name: "Buscar en el selector" })
+      .fill("Entrada 26");
+    await dialog.getByRole("button", { name: "Buscar", exact: true }).click();
+    await dialog
+      .getByRole("radio", { name: "Seleccionar Entrada 26", exact: true })
+      .check();
+    await dialog
+      .getByRole("button", { name: "Usar selección", exact: true })
+      .click();
+    await page.locator("#field-cover").click();
+    await dialog
+      .getByRole("radio", { name: "Seleccionar Documento.pdf", exact: true })
+      .check();
+    await dialog
+      .getByRole("button", { name: "Usar selección", exact: true })
+      .click();
+    await expect(page.locator(".asset-preview a")).toHaveText("Documento.pdf");
+    await page
+      .getByRole("button", { name: "Insertar imagen de la biblioteca" })
+      .click();
+    await dialog
+      .getByRole("searchbox", { name: "Buscar en el selector" })
+      .fill("Imagen 13");
+    await dialog.getByRole("button", { name: "Buscar", exact: true }).click();
+    await dialog
+      .getByRole("radio", { name: "Seleccionar Imagen 13.png", exact: true })
+      .check();
+    await dialog
+      .getByRole("button", { name: "Usar selección", exact: true })
+      .click();
+    await expect(page.locator(".tiptap img")).toHaveCount(1);
+    await expect(page.locator("#field-title")).toHaveValue("Página principal");
+    await page.getByRole("button", { name: "Guardar", exact: true }).click();
+    await expect(page).toHaveURL(/\/content\/[a-f0-9-]{36}\?locale=es$/);
+    await page.reload();
+    await expect(related.getByRole("listitem")).toHaveCount(3);
+    await expect(page.locator(".tiptap img")).toHaveCount(1);
+    const after = await (await page.request.get(page.url())).text();
+    expect(after).not.toContain("CUERPO_AJENO_NO_DESCARGAR_EN_EDITOR");
+    expect(after).not.toContain("Imagen 07.png");
+    await page.getByRole("button", { name: "GL", exact: true }).click();
+    await expect(related).toContainText("Entrada galega 26");
+    await page.locator("#field-related").click();
+    await dialog
+      .getByRole("searchbox", { name: "Buscar en el selector" })
+      .fill("Página principal");
+    await dialog.getByRole("button", { name: "Buscar", exact: true }).click();
+    await expect(
+      dialog.getByRole("heading", { name: "No encontramos recursos" }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#field-related")).toBeFocused();
+    await page.locator("#field-related").click();
+    for (const [index, number] of ["01", "13", "26"].entries()) {
+      if (index)
+        await dialog
+          .getByRole("button", { name: "Página siguiente del selector" })
+          .click();
+      await dialog
+        .getByRole("checkbox", {
+          name: `Seleccionar Entrada galega ${number}`,
+          exact: true,
+        })
+        .uncheck();
+    }
+    await dialog
+      .getByRole("button", { name: "Usar selección (0)", exact: true })
+      .click();
+    await expect(related).toHaveCount(0);
+    await page.getByRole("button", { name: "Guardar", exact: true }).click();
+    await expect(page.getByRole("status")).toContainText(
+      "Todos los cambios guardados",
+    );
+    await page.reload();
+    await expect(related).toHaveCount(0);
+  });
+
+  test("protege la consulta, permite reintentar errores y se adapta a móvil", async ({
+    page,
+    request,
+  }) => {
+    const endpoint = `/api/editor/spaces/${pickerSpace}/choices`;
+    expect((await request.get(`${endpoint}?kind=entry`)).status()).toBe(401);
+    await login(page);
+    const own = await page.request.get(`${endpoint}?kind=entry&locale=gl`);
+    expect(own.status()).toBe(200);
+    expect(own.headers()["cache-control"]).toContain("no-store");
+    expect((await own.json()).items).toHaveLength(12);
+    expect(
+      (
+        await page.request.get(
+          `/api/editor/spaces/${process.env.SPACE_B}/choices?kind=entry`,
+        )
+      ).status(),
+    ).toBe(404);
+    expect((await page.request.get(`${endpoint}?kind=user`)).status()).toBe(
+      400,
+    );
+    expect(
+      (await page.request.get(`${endpoint}?kind=asset&page=0`)).status(),
+    ).toBe(400);
+    await page.goto(`/spaces/${pickerSpace}/content/new?type=${pickerModel}`);
+    let calls = 0;
+    await page.route(
+      `**/api/editor/spaces/${pickerSpace}/choices?**`,
+      (route) => {
+        if (calls++ === 0)
+          return route.fulfill({
+            status: 503,
+            contentType: "application/json",
+            body: '{"error":"Error temporal de prueba"}',
+          });
+        return route.continue();
+      },
+    );
+    await page.locator("#field-cover").click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("alert")).toContainText(
+      "No se pudieron cargar",
+    );
+    await dialog
+      .getByRole("button", { name: "Reintentar", exact: true })
+      .click();
+    await expect(dialog.getByRole("radio")).toHaveCount(12);
+    await page.setViewportSize({ width: 390, height: 844 });
+    const box = await dialog.boundingBox();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.width).toBeLessThanOrEqual(390);
+    await expect(dialog.locator(".resource-option").first()).toBeInViewport();
+    await page.screenshot({
+      path: test.info().outputPath("selector-mobile.png"),
+      fullPage: false,
+    });
+    await dialog.getByRole("button", { name: "Cancelar", exact: true }).click();
+    await expect(page.locator("#field-cover")).toBeFocused();
   });
 });

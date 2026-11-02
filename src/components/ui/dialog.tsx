@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 /** Native modal dialog provides focus trapping, Escape and focus restoration. */
 export function Dialog({
   titleId,
@@ -13,10 +13,18 @@ export function Dialog({
   className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const dialog = ref.current;
+    const previous =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     dialog?.showModal();
-    return () => dialog?.close();
+    return () => {
+      // Close before React detaches the node, then restore the triggering control.
+      dialog?.close();
+      if (previous?.isConnected) previous.focus({ preventScroll: true });
+    };
   }, []);
   return (
     <dialog

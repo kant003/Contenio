@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 import { session } from "@/lib/session";
 import { userQuery } from "@/lib/database";
+import { getLinkedResources } from "@/lib/editor-resources";
 import { getMediaPage } from "@/lib/media-listing";
 import { parseMediaFilters, mediaHref } from "@/lib/media-filters";
 import { getContentPage } from "@/lib/content-listing";
@@ -19,7 +20,6 @@ import { Models } from "@/components/models";
 import { Media } from "@/components/media";
 import { Settings } from "@/components/settings";
 import type {
-  Asset,
   ContentType,
   Entry,
   Publication,
@@ -66,24 +66,18 @@ export default async function Workspace({
   } else if (section[0] === "content" && section.length === 2) {
     if (section[1] !== "new" && !z.uuid().safeParse(section[1]).success)
       notFound();
-    const [entries, pubs, assetRows] = await Promise.all([
+    const [entries, pubs] = await Promise.all([
       userQuery<Entry>(
         user.id,
-        "select * from entries where space_id=$1 order by updated_at desc",
-        [spaceId],
+        "select * from entries where space_id=$1 and id=$2",
+        [spaceId, section[1] === "new" ? null : section[1]],
       ),
       userQuery<Publication>(
         user.id,
         "select * from current_publications where space_id=$1 and entry_id=$2",
         [spaceId, section[1] === "new" ? null : section[1]],
       ),
-      userQuery<Asset>(
-        user.id,
-        "select * from assets where space_id=$1 order by created_at desc",
-        [spaceId],
-      ),
     ]);
-    const assets = assetRows.map((a) => ({ ...a, url: assetUrl(a) }));
     const entry =
       section[1] === "new"
         ? undefined
@@ -93,6 +87,11 @@ export default async function Workspace({
       (t) => t.id === (entry?.content_type_id ?? firstParam(search.type)),
     );
     if (!type) notFound();
+    const { assets, entryChoices } = await getLinkedResources(
+      user.id,
+      spaceId,
+      entry?.id,
+    );
     body = (
       <EntryEditor
         key={entry?.id ?? `new-${type.id}`}
@@ -100,8 +99,7 @@ export default async function Workspace({
         initial={entry}
         type={type}
         assets={assets}
-        entries={entries}
-        types={models}
+        entryChoices={entryChoices}
         publications={pubs}
         initialLocale={firstParam(search.locale) === "gl" ? "gl" : "es"}
       />

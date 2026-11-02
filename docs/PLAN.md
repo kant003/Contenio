@@ -49,7 +49,7 @@ La validación de Neon, Blob y SMTP en producción continúa pendiente: las prue
 - Modelos y Ajustes ya no consultan entradas, publicaciones ni archivos; el listado no envía sus cuerpos o snapshots al navegador.
 - 8 pruebas unitarias, 41 comprobaciones de integración existentes y 22 nuevas, más 6 pruebas Playwright sobre producción local: todo correcto. Tipos, ESLint y build correctos.
 
-La paginación de la biblioteca se ha completado en el siguiente avance. Próximas mejoras locales: paginar los selectores de referencias y archivos del editor; verificar de principio a fin los flujos de recuperación de cuenta con el buzón local. La conexión y validación real de Neon/Blob continúa pendiente del acceso a Vercel.
+La paginación de la biblioteca y de los selectores del editor se ha completado en los avances posteriores. Próxima mejora local: verificar de principio a fin los flujos de recuperación de cuenta con el buzón local. La conexión y validación real de Neon/Blob continúa pendiente del acceso a Vercel.
 
 ## Avance: biblioteca de archivos con búsqueda y paginación
 
@@ -62,3 +62,15 @@ La paginación de la biblioteca se ha completado en el siguiente avance. Próxim
 - Verificación: 10 pruebas unitarias, 85 comprobaciones de integración (41 + 22 + 22), 8 pruebas Playwright sobre producción local, tipos, ESLint y build correctos.
 
 Este avance no cambia el esquema ni requiere nuevas migraciones. No se han creado recursos remotos ni realizado push. Neon, Blob y correo de producción siguen pendientes de conexión y validación con los accesos de Vercel.
+
+## Avance: selectores paginados dentro del editor
+
+- Los campos de archivo, referencias simples/múltiples y las imágenes de Tiptap abren un selector con búsqueda y hasta 12 recursos por página. La búsqueda respeta ES/GL y el espacio activo; el selector de imágenes excluye PDF.
+- La selección múltiple permanece al cambiar de página o buscar. Confirmar aplica los cambios; Cancelar o Escape los descarta. Es posible vaciar la selección completa y quitar elementos desde el campo.
+- Abrir una entrada carga únicamente su contenido, sus publicaciones y sus recursos vinculados. Las referencias se presentan mediante etiquetas traducibles, sin cargar los cuerpos de las entradas relacionadas.
+- Nuevo endpoint interno de lectura con sesión verificada, RLS, validación de filtros y respuestas privadas sin caché. No utiliza claves públicas de lectura ni permite consultar otros espacios.
+- Las búsquedas no disparan guardados ni cambian la URL del editor. Los fallos de consulta admiten reintento y se cancelan peticiones anteriores para evitar respuestas atrasadas.
+- Corregida la restauración del foco en los diálogos al cerrar; comprobada la visualización en móvil.
+- Verificación: 12 pruebas unitarias; 103 comprobaciones de integración (41 + 22 + 22 + 18); 10 pruebas Playwright sobre producción local. Tipos, ESLint y build correctos.
+
+Sin nuevas dependencias ni cambios de esquema. El código y las pruebas están preparados para la integración con Neon/Blob; la validación real en Vercel sigue pendiente del acceso externo. Siguiente avance local: recuperación y cambio de contraseña con el buzón de pruebas.
