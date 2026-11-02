@@ -11,6 +11,7 @@ import {
   Layers3,
   LogOut,
   Settings2,
+  UserRound,
 } from "lucide-react";
 import { logoutAction } from "@/app/actions";
 import type { Space } from "@/lib/types";
@@ -125,10 +126,16 @@ export function Shell({
               {items.find((i) => i.key === section)?.label ?? "Contenido"}
             </strong>
           </div>
-          <span className="private-label">
-            <span className="status-dot" />
-            Espacio privado
-          </span>
+          <div className="row">
+            <span className="private-label">
+              <span className="status-dot" />
+              Espacio privado
+            </span>
+            <Link href="/account" className="account-link">
+              <UserRound size={15} />
+              Mi cuenta
+            </Link>
+          </div>
         </header>
         <main id="main" className="main-content">
           {children}

@@ -35,6 +35,9 @@ export function Spaces({
         </Link>
         <div className="row">
           <span className="muted">{email}</span>
+          <Link href="/account" className="account-link">
+            Mi cuenta
+          </Link>
           <form action={logoutAction}>
             <Button variant="ghost" size="icon" title="Cerrar sesión">
               <LogOut size={17} />

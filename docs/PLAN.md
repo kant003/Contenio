@@ -10,7 +10,7 @@ Next.js App Router, TypeScript, Tailwind, Tiptap y PostgreSQL. Producción: Neon
 | Hito | Entrega                                                                    | Estado                                                                           |
 | ---- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | 1    | Login, espacios aislados y páginas ES/GL con persistencia                  | Implementado y probado con PostgreSQL local                                      |
-| 2    | Administración de clientes y editores, recuperación y cambio de contraseña | Implementado; SMTP de producción pendiente                                       |
+| 2    | Administración de clientes y editores, recuperación y cambio de contraseña | Implementado y probado con correo local; SMTP de producción pendiente            |
 | 3    | Modelos configurables y formularios dinámicos                              | Implementado                                                                     |
 | 4    | Imágenes/PDF privados y referencias entre entradas                         | Implementado; conexión real a Blob pendiente                                     |
 | 5    | Publicación por idioma, snapshots, autoguardado y conflictos               | Implementado                                                                     |
@@ -49,7 +49,7 @@ La validación de Neon, Blob y SMTP en producción continúa pendiente: las prue
 - Modelos y Ajustes ya no consultan entradas, publicaciones ni archivos; el listado no envía sus cuerpos o snapshots al navegador.
 - 8 pruebas unitarias, 41 comprobaciones de integración existentes y 22 nuevas, más 6 pruebas Playwright sobre producción local: todo correcto. Tipos, ESLint y build correctos.
 
-La paginación de la biblioteca y de los selectores del editor se ha completado en los avances posteriores. Próxima mejora local: verificar de principio a fin los flujos de recuperación de cuenta con el buzón local. La conexión y validación real de Neon/Blob continúa pendiente del acceso a Vercel.
+La paginación de la biblioteca y de los selectores del editor se ha completado en los avances posteriores. La recuperación de cuenta se ha verificado en el avance posterior con el buzón local. La conexión y validación real de Neon/Blob continúa pendiente del acceso a Vercel.
 
 ## Avance: biblioteca de archivos con búsqueda y paginación
 
@@ -73,4 +73,16 @@ Este avance no cambia el esquema ni requiere nuevas migraciones. No se han cread
 - Corregida la restauración del foco en los diálogos al cerrar; comprobada la visualización en móvil.
 - Verificación: 12 pruebas unitarias; 103 comprobaciones de integración (41 + 22 + 22 + 18); 10 pruebas Playwright sobre producción local. Tipos, ESLint y build correctos.
 
-Sin nuevas dependencias ni cambios de esquema. El código y las pruebas están preparados para la integración con Neon/Blob; la validación real en Vercel sigue pendiente del acceso externo. Siguiente avance local: recuperación y cambio de contraseña con el buzón de pruebas.
+Sin nuevas dependencias ni cambios de esquema. El código y las pruebas están preparados para la integración con Neon/Blob; la validación real en Vercel sigue pendiente del acceso externo. La recuperación y el cambio de contraseña se han verificado en el avance posterior con el buzón de pruebas.
+
+## Avance: recuperación de cuenta y cambio de contraseña
+
+- Acceso visible a **Mi cuenta** desde los espacios y el panel. Cambio con contraseña actual, confirmación y errores accesibles junto al campo; conserva la sesión actual y cierra las demás.
+- Recuperación por correo con enlaces de un solo uso válidos durante 30 minutos. Respuesta genérica para direcciones registradas o desconocidas; sin registro público.
+- Pantalla explicativa para enlaces incompletos, caducados o utilizados, incluyendo caducidad mientras se completa el formulario. Restablecer la contraseña cierra todas las sesiones anteriores.
+- Política compartida de 12–128 caracteres en formularios, servidor, Better Auth y creación de cuentas administradas. No se recortan las contraseñas.
+- Corregida la lectura de cookies tras renovar una sesión en una acción del servidor, para que la confirmación permanezca visible. Páginas de acceso sin caché, sin referencia saliente y excluidas de indexación. Cabecera de acceso móvil sin texto cortado.
+- Pruebas con cuentas desechables, correo local y limpieza limitada a sus propios mensajes: entrega real, normalización del email, confirmación incorrecta, expiración, consumo concurrente de un mismo enlace, credenciales anteriores/nuevas y revocación de sesiones. Los intentos HTTP respetan los límites de Better Auth.
+- Verificación: 16 pruebas unitarias, 103 comprobaciones de integración y 14 pruebas Playwright sobre producción local. Tipos, ESLint y build correctos.
+
+Sin nuevas dependencias ni migraciones. Correo probado con Mailpit local; SMTP, Neon y Blob de producción siguen pendientes de conexión y validación al disponer de los accesos externos. No se ha realizado push ni despliegue.

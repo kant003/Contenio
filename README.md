@@ -27,6 +27,7 @@ El buzón de pruebas para recuperar contraseñas está en http://localhost:58025
 
 - Espacios aislados mediante permisos de servidor y Row Level Security en PostgreSQL.
 - Sin registro abierto. Administrador global y editores asignados por espacio.
+- «Mi cuenta» para cambiar la contraseña y recuperación por correo con enlaces de un solo uso.
 - Modelos configurables con campos compartidos o traducidos al español/gallego.
 - Texto, editor enriquecido, números, booleanos, fechas, archivos y referencias.
 - Autoguardado, guardado manual y control de conflictos. Ctrl/Cmd+S guarda.
@@ -37,6 +38,14 @@ El buzón de pruebas para recuperar contraseñas está en http://localhost:58025
 ## Crear cuentas
 
 En desarrollo se crean con `db:seed`. Para crear una cuenta administrada en otro entorno, establece `NEW_USER_EMAIL` y `NEW_USER_PASSWORD` en el entorno del proceso y ejecuta `npm run db:create-user`. No pases contraseñas como argumentos ni las guardes en Git. `NEW_USER_ADMIN=true` crea el primer administrador global; después se asignan editores por email desde Ajustes.
+
+## Recuperar el acceso y cambiar la contraseña
+
+«¿Has olvidado tu contraseña?» envía un enlace válido durante 30 minutos. La respuesta no confirma si una dirección está registrada. Un enlace caducado, utilizado o incompleto permite solicitar otro; también se comprueba su validez al enviar el formulario.
+
+Desde **Mi cuenta**, disponible en la pantalla de espacios y dentro del panel, puedes cambiar la contraseña confirmando la actual. Las nuevas contraseñas tienen entre 12 y 128 caracteres y deben repetirse. Los errores se muestran junto a cada campo sin borrar lo escrito.
+
+Recuperar la cuenta cierra todas las sesiones anteriores. Cambiar la contraseña desde Mi cuenta mantiene la sesión actual y cierra las demás. En desarrollo los correos llegan exclusivamente al buzón local Mailpit; en producción debes configurar las variables SMTP descritas en la guía de despliegue.
 
 ## API y web de ejemplo
 
@@ -63,7 +72,7 @@ npm run test:e2e
 npm run build
 ```
 
-Las pruebas usan exclusivamente PostgreSQL local y datos sintéticos; Playwright utiliza una instalación de Google Chrome con perfil aislado. Los tests comprueban RLS, API, conflictos, URLs firmadas, editor bilingüe y formularios dinámicos.
+Las pruebas usan exclusivamente PostgreSQL local y datos sintéticos; Playwright utiliza una instalación de Google Chrome con perfil aislado. Los tests comprueban RLS, API, conflictos, URLs firmadas, editor bilingüe, formularios dinámicos y recuperación/cambio de contraseña. Las pruebas de correo usan cuentas desechables, SMTP local y Mailpit; no cambian las contraseñas del seed. Respetan los límites reales de acceso HTTP y eliminan únicamente los mensajes de sus propias cuentas.
 
 ## Seguridad y arquitectura
 

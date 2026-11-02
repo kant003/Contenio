@@ -1,25 +1,66 @@
 "use client";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Layers3, Check, LoaderCircle } from "lucide-react";
-import { loginAction, recoveryAction, passwordAction } from "@/app/actions";
+import {
+  loginAction,
+  recoveryAction,
+  resetPasswordAction,
+  changePasswordAction,
+} from "@/app/actions";
+import {
+  initialAuthState,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_MAX_LENGTH,
+  type AuthField,
+} from "@/lib/auth-validation";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 export function AuthForm({
   mode = "login",
   resetToken,
+  invalidLink = false,
+  email,
 }: {
-  mode?: "login" | "recovery" | "password";
+  mode?: "login" | "recovery" | "reset" | "change";
   resetToken?: string;
+  invalidLink?: boolean;
+  email?: string;
 }) {
-  const [message, action, pending] = useActionState(
-    mode === "login"
-      ? loginAction
-      : mode === "recovery"
-        ? recoveryAction
-        : passwordAction,
-    "",
+  const [state, action, pending] = useActionState(
+    {
+      login: loginAction,
+      recovery: recoveryAction,
+      reset: resetPasswordAction,
+      change: changePasswordAction,
+    }[mode],
+    initialAuthState,
   );
+  const [values, setValues] = useState({
+    email: "",
+    password: "",
+    currentPassword: "",
+    confirmation: "",
+  });
+  const passwordMode = mode === "reset" || mode === "change";
+  const unusable = invalidLink || Boolean(state.invalidLink);
+  const complete = passwordMode && state.status === "success";
+  const field = (name: AuthField) => ({
+    id: `auth-${name}`,
+    name,
+    value: values[name],
+    disabled: pending,
+    onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+      setValues((current) => ({ ...current, [name]: event.target.value })),
+    "aria-invalid": Boolean(state.errors?.[name]),
+    "aria-describedby": state.errors?.[name] ? `auth-${name}-error` : undefined,
+  });
+  const error = (name: AuthField) =>
+    state.errors?.[name] ? (
+      <p id={`auth-${name}-error`} className="field-error">
+        {state.errors[name]}
+      </p>
+    ) : null;
   return (
     <main className="auth-page">
       <aside className="auth-story">
@@ -61,103 +102,144 @@ export function AuthForm({
         <div className="auth-box">
           <span className="eyebrow">TU ESPACIO DE TRABAJO</span>
           <h2>
-            {mode === "login"
-              ? "Qué bien verte de nuevo."
-              : mode === "recovery"
-                ? "Recupera tu acceso."
-                : "Una nueva contraseña."}
+            {unusable
+              ? "Este enlace ya no es válido."
+              : mode === "login"
+                ? "Qué bien verte de nuevo."
+                : mode === "recovery"
+                  ? "Recupera tu acceso."
+                  : mode === "change"
+                    ? "Tu contraseña."
+                    : "Una nueva contraseña."}
           </h2>
           <p>
-            {mode === "login"
-              ? "Entra para dar forma a tu próximo contenido."
-              : mode === "recovery"
-                ? "Te enviaremos un enlace para volver a entrar."
-                : "Elige una contraseña de al menos 12 caracteres."}
-          </p>
-          <form action={action}>
-            {resetToken && (
-              <input type="hidden" name="resetToken" value={resetToken} />
-            )}
-            {mode === "password" && !resetToken && (
-              <label>
-                Contraseña actual
-                <Input
-                  name="currentPassword"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                />
-              </label>
-            )}
-            {mode !== "password" && (
-              <label>
-                Email
-                <Input
-                  name="email"
-                  type="email"
-                  placeholder="tu@empresa.com"
-                  autoComplete="email"
-                  required
-                />
-              </label>
-            )}
-            {mode !== "recovery" && (
-              <label>
-                Contraseña
-                <Input
-                  name="password"
-                  type="password"
-                  autoComplete={
-                    mode === "login" ? "current-password" : "new-password"
-                  }
-                  minLength={mode === "password" ? 12 : undefined}
-                  required
-                />
-              </label>
-            )}
-            {mode === "password" && (
-              <label>
-                Repite la contraseña
-                <Input
-                  name="confirmation"
-                  type="password"
-                  autoComplete="new-password"
-                  minLength={12}
-                  required
-                />
-              </label>
-            )}
-            {mode === "login" && (
-              <Link href="/forgot-password" className="auth-recovery">
-                ¿Has olvidado tu contraseña?
-              </Link>
-            )}
-            {message && (
-              <p
-                className={
-                  message.startsWith("Si la") ||
-                  message.startsWith("Contraseña actualizada")
-                    ? "notice success"
-                    : "notice error"
-                }
-                role="status"
-              >
-                {message}
-              </p>
-            )}
-            <Button disabled={pending} className="full">
-              {pending ? <LoaderCircle size={17} className="spin" /> : null}
-              {mode === "login"
-                ? "Entrar a mi espacio"
+            {unusable
+              ? "Puede haber caducado o haberse utilizado. Solicita un enlace nuevo para recuperar el acceso."
+              : mode === "login"
+                ? "Entra para dar forma a tu próximo contenido."
                 : mode === "recovery"
-                  ? "Enviar enlace"
-                  : "Actualizar contraseña"}
-              <ArrowRight size={17} />
-            </Button>
-          </form>
+                  ? "Te enviaremos un enlace de un solo uso, válido durante 30 minutos."
+                  : "Elige una contraseña de entre 12 y 128 caracteres."}
+          </p>
+          {email && (
+            <p className="account-email">
+              Sesión iniciada como <strong>{email}</strong>
+            </p>
+          )}
+          {unusable ? (
+            <Link
+              className="button button-primary full"
+              href="/forgot-password"
+            >
+              Solicitar otro enlace
+            </Link>
+          ) : (
+            <>
+              {state.message && (
+                <p
+                  className={`notice ${state.status === "success" ? "success" : "error"}`}
+                  role={state.status === "error" ? "alert" : "status"}
+                >
+                  {state.message}
+                </p>
+              )}
+              {!complete && (
+                <form action={action}>
+                  {resetToken && (
+                    <input type="hidden" name="resetToken" value={resetToken} />
+                  )}
+                  {mode === "change" && (
+                    <>
+                      <label htmlFor="auth-currentPassword">
+                        Contraseña actual
+                      </label>
+                      <Input
+                        {...field("currentPassword")}
+                        type="password"
+                        autoComplete="current-password"
+                        maxLength={PASSWORD_MAX_LENGTH}
+                        required
+                      />
+                      {error("currentPassword")}
+                    </>
+                  )}
+                  {!passwordMode && (
+                    <>
+                      <label htmlFor="auth-email">Email</label>
+                      <Input
+                        {...field("email")}
+                        type="email"
+                        placeholder="tu@empresa.com"
+                        autoComplete="email"
+                        required
+                      />
+                      {error("email")}
+                    </>
+                  )}
+                  {mode !== "recovery" && (
+                    <>
+                      <label htmlFor="auth-password">
+                        {passwordMode ? "Nueva contraseña" : "Contraseña"}
+                      </label>
+                      <Input
+                        {...field("password")}
+                        type="password"
+                        autoComplete={
+                          passwordMode ? "new-password" : "current-password"
+                        }
+                        minLength={
+                          passwordMode ? PASSWORD_MIN_LENGTH : undefined
+                        }
+                        maxLength={PASSWORD_MAX_LENGTH}
+                        required
+                      />
+                      {error("password")}
+                    </>
+                  )}
+                  {passwordMode && (
+                    <>
+                      <label htmlFor="auth-confirmation">
+                        Repite la contraseña
+                      </label>
+                      <Input
+                        {...field("confirmation")}
+                        type="password"
+                        autoComplete="new-password"
+                        minLength={PASSWORD_MIN_LENGTH}
+                        maxLength={PASSWORD_MAX_LENGTH}
+                        required
+                      />
+                      {error("confirmation")}
+                    </>
+                  )}
+                  {mode === "login" && (
+                    <Link href="/forgot-password" className="auth-recovery">
+                      ¿Has olvidado tu contraseña?
+                    </Link>
+                  )}
+                  <Button disabled={pending} className="full">
+                    {pending ? (
+                      <LoaderCircle size={17} className="spin" />
+                    ) : null}
+                    {mode === "login"
+                      ? "Entrar a mi espacio"
+                      : mode === "recovery"
+                        ? "Enviar enlace"
+                        : "Actualizar contraseña"}
+                    <ArrowRight size={17} />
+                  </Button>
+                </form>
+              )}
+            </>
+          )}
           {mode !== "login" ? (
-            <Link href="/login" className="auth-back">
-              Volver al inicio de sesión
+            <Link
+              href={mode === "change" ? "/spaces" : "/login"}
+              className="auth-back"
+            >
+              {mode === "change"
+                ? "Volver a mis espacios"
+                : "Volver al inicio de sesión"}
             </Link>
           ) : (
             <div className="auth-note">

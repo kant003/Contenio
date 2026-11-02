@@ -1,11 +1,13 @@
 import "server-only";
-import { headers } from "next/headers";
+import { authHeaders } from "@/lib/auth-headers";
 import { redirect } from "next/navigation";
 import { configured, cmsDb } from "./database";
 import { getAuth } from "./auth";
 export async function session() {
   if (!configured()) redirect("/setup");
-  const current = await getAuth().api.getSession({ headers: await headers() });
+  const current = await getAuth().api.getSession({
+    headers: await authHeaders(),
+  });
   if (!current) redirect("/login");
   const db = cmsDb(current.user.id);
   const { data: admin, error } = await db.rpc("is_admin");

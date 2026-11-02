@@ -9,11 +9,11 @@ Vercel aloja la aplicación Next.js. PostgreSQL se aprovisiona con la integraci�
 3. Mantén bases o ramas independientes para Production y Preview. Nunca conectar previews a la base de clientes.
 4. Crea un almacén **privado** de Vercel Blob y conecta `BLOB_READ_WRITE_TOKEN`. Establece `NEXT_PUBLIC_BLOB_UPLOADS=true` para habilitar las subidas directas autorizadas de hasta 10 MiB. Separa también los archivos de desarrollo y producción.
 5. Genera un `BETTER_AUTH_SECRET` de alta entropía (mínimo 32 caracteres), y define `BETTER_AUTH_URL` y `NEXT_PUBLIC_SITE_URL` con el dominio HTTPS exacto. No crear secretos con prefijo NEXT_PUBLIC_.
-6. Configura `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD` y `MAIL_FROM` para los correos de recuperación. No habilites el registro público.
+6. Configura `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD` y `MAIL_FROM` para los correos de recuperación. No habilites el registro público. Los enlaces de recuperación duran 30 minutos y usan el dominio de `BETTER_AUTH_URL`; confirma la entrega real y las URLs HTTPS antes de habilitar el acceso a clientes.
 7. Aplica `npm run db:migrate` con las variables del entorno correcto, antes del primer arranque de producción. El usuario migrador necesita crear el rol `contenio_app`, otorgárselo y crear tablas y funciones. La integración Neon estándar permite administrar roles; si se usa un usuario de base restringido, el administrador debe preparar ese rol y los permisos primero.
 8. Crea el primer administrador con `db:create-user`, usando variables de entorno temporales `NEW_USER_EMAIL`, `NEW_USER_PASSWORD` y `NEW_USER_ADMIN=true`. No incluyas contraseñas en argumentos, documentación ni commits.
 9. Crea los espacios y las cuentas editoras. Asigna cada editor desde Ajustes y genera una clave por web consumidora.
-10. Verifica login/logout, recuperación, ES/GL, aislamiento entre dos clientes, subidas pequeñas y mayores de 4.5 MiB, publicación, API y revocación en el dominio definitivo.
+10. Verifica login/logout, recuperación (enlace caducado y de un solo uso), cambio desde Mi cuenta y cierre de otras sesiones, ES/GL, aislamiento entre dos clientes, subidas pequeñas y mayores de 4.5 MiB, publicación, API y revocación en el dominio definitivo.
 
 ## Operación
 

@@ -1818,8 +1818,11 @@ input[type="checkbox"] {
   color: #9c91b7;
   display: block;
   text-align: right;
-  margin-top: -7px;
-  margin-bottom: 24px;
+  margin-top: 12px;
+  margin-bottom: 0;
+}
+.auth-box form > .button.full {
+  margin-top: 24px;
 }
 .auth-box .button.full {
   padding: 14px;
@@ -2395,7 +2398,7 @@ input[type="checkbox"] {
     max-width: 380px;
   }
   .auth-copy h1 br {
-    display: none;
+    display: initial;
   }
   .auth-copy p {
     font-size: 11px;
@@ -2833,4 +2836,40 @@ input[type="checkbox"] {
   .resource-footer .button {
     font-size: 12px;
   }
+}
+
+.auth-box form > label {
+  display: block;
+  margin: 20px 0 8px;
+}
+.auth-box form > label:first-child {
+  margin-top: 0;
+}
+.auth-box .field-error {
+  font-size: 12px;
+  margin: 7px 0 0;
+}
+.auth-box .account-email {
+  overflow-wrap: anywhere;
+}
+.account-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--purple);
+  padding: 7px;
+  border-radius: 5px;
+}
+.account-link:hover {
+  background: #f3f1fb;
+}
+.topbar > div:first-child {
+  min-width: 0;
+}
+.topbar > div:first-child > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

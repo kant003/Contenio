@@ -8,10 +8,17 @@ import { fileTypeFromBuffer } from "file-type";
 import { session, adminSession } from "@/lib/session";
 import { getAuth } from "@/lib/auth";
 import { userQuery } from "@/lib/database";
-import { headers } from "next/headers";
+import { authHeaders } from "@/lib/auth-headers";
 import { storeAsset, removeAssetObject, inspectBlob } from "@/lib/storage";
 import type { Asset } from "@/lib/types";
 import type { Entry, Field, Locale, Result, Values } from "@/lib/types";
+import {
+  emailSchema,
+  passwordsSchema,
+  changePasswordSchema,
+  authValidationError,
+  type AuthState,
+} from "@/lib/auth-validation";
 const id = z.uuid();
 async function result<T>(fn: () => Promise<T>): Promise<Result<T>> {
   try {
@@ -31,68 +38,157 @@ async function result<T>(fn: () => Promise<T>): Promise<Result<T>> {
     };
   }
 }
-export async function loginAction(_previous: string, form: FormData) {
+export async function loginAction(
+  _previous: AuthState,
+  form: FormData,
+): Promise<AuthState> {
+  const email = emailSchema.safeParse(form.get("email"));
+  if (!email.success)
+    return {
+      status: "error",
+      message: "Revisa los campos indicados.",
+      errors: { email: "Introduce un email válido." },
+    };
   try {
     await getAuth().api.signInEmail({
-      body: {
-        email: String(form.get("email") ?? "").trim(),
-        password: String(form.get("password") ?? ""),
-      },
-      headers: await headers(),
+      body: { email: email.data, password: String(form.get("password") ?? "") },
+      headers: await authHeaders(),
     });
   } catch {
-    return "No hemos podido iniciar sesión. Revisa tu email y contraseña.";
+    return {
+      status: "error",
+      message: "No hemos podido iniciar sesión. Revisa tu email y contraseña.",
+    };
   }
   redirect("/spaces");
 }
 export async function logoutAction() {
-  await getAuth().api.signOut({ headers: await headers() });
+  await getAuth().api.signOut({ headers: await authHeaders() });
   redirect("/login");
 }
-export async function recoveryAction(_previous: string, form: FormData) {
-  const email = z.email().safeParse(form.get("email"));
-  if (!email.success) return "Introduce un email válido.";
+export async function recoveryAction(
+  _previous: AuthState,
+  form: FormData,
+): Promise<AuthState> {
+  const email = emailSchema.safeParse(form.get("email"));
+  if (!email.success)
+    return {
+      status: "error",
+      message: "Revisa los campos indicados.",
+      errors: { email: "Introduce un email válido." },
+    };
+  if (!process.env.SMTP_HOST)
+    return {
+      status: "error",
+      message:
+        "El correo de recuperación no está disponible. Inténtalo más tarde.",
+    };
   try {
     await getAuth().api.requestPasswordReset({
       body: {
         email: email.data,
-        redirectTo: `${process.env.BETTER_AUTH_URL}/reset-password`,
+        redirectTo: `${getAuth().options.baseURL}/reset-password`,
       },
-      headers: await headers(),
+      headers: await authHeaders(),
     });
   } catch {
-    return "No se pudo enviar el enlace. Inténtalo más tarde.";
+    return {
+      status: "error",
+      message: "No se pudo enviar el enlace. Inténtalo más tarde.",
+    };
   }
-  return "Si la cuenta existe, recibirás un enlace para recuperar el acceso.";
+  return {
+    status: "success",
+    message:
+      "Si la cuenta existe, recibirás un enlace para recuperar el acceso.",
+  };
 }
-export async function passwordAction(_previous: string, form: FormData) {
-  const password = String(form.get("password") ?? "");
-  if (password.length < 12) return "Utiliza al menos 12 caracteres.";
-  if (password !== form.get("confirmation"))
-    return "Las contraseñas no coinciden.";
-  const token = String(form.get("resetToken") ?? "");
+function authErrorCode(error: unknown) {
+  if (
+    error &&
+    typeof error === "object" &&
+    "body" in error &&
+    error.body &&
+    typeof error.body === "object" &&
+    "code" in error.body
+  )
+    return error.body.code;
+}
+export async function resetPasswordAction(
+  _previous: AuthState,
+  form: FormData,
+): Promise<AuthState> {
+  const values = passwordsSchema.safeParse(Object.fromEntries(form));
+  if (!values.success) return authValidationError(values.error);
+  const token = z.string().min(1).max(256).safeParse(form.get("resetToken"));
+  if (!token.success)
+    return {
+      status: "error",
+      message: "Este enlace ya no es válido. Solicita uno nuevo.",
+      invalidLink: true,
+    };
   try {
-    if (token)
-      await getAuth().api.resetPassword({
-        body: { token, newPassword: password },
-        headers: await headers(),
-      });
-    else {
-      await session();
-      await getAuth().api.changePassword({
-        body: {
-          currentPassword: String(form.get("currentPassword") ?? ""),
-          newPassword: password,
-          revokeOtherSessions: true,
-        },
-        headers: await headers(),
-      });
-    }
-  } catch (e) {
-    unstable_rethrow(e);
-    return "No se pudo actualizar. Revisa la contraseña actual o solicita un enlace nuevo.";
+    await getAuth().api.resetPassword({
+      body: { token: token.data, newPassword: values.data.password },
+      headers: await authHeaders(),
+    });
+  } catch (error) {
+    unstable_rethrow(error);
+    if (
+      ["INVALID_TOKEN", "USER_NOT_FOUND"].includes(String(authErrorCode(error)))
+    )
+      return {
+        status: "error",
+        message:
+          "Este enlace ya no es válido o ha caducado. Solicita uno nuevo.",
+        invalidLink: true,
+      };
+    return {
+      status: "error",
+      message: "No se pudo actualizar la contraseña. Inténtalo de nuevo.",
+    };
   }
-  return "Contraseña actualizada. Ya puedes acceder al panel.";
+  return {
+    status: "success",
+    message:
+      "Contraseña actualizada. Inicia sesión con tu nueva contraseña. Las sesiones anteriores se han cerrado.",
+  };
+}
+export async function changePasswordAction(
+  _previous: AuthState,
+  form: FormData,
+): Promise<AuthState> {
+  await session();
+  const values = changePasswordSchema.safeParse(Object.fromEntries(form));
+  if (!values.success) return authValidationError(values.error);
+  try {
+    await getAuth().api.changePassword({
+      body: {
+        currentPassword: values.data.currentPassword,
+        newPassword: values.data.password,
+        revokeOtherSessions: true,
+      },
+      headers: await authHeaders(),
+    });
+  } catch (error) {
+    unstable_rethrow(error);
+    if (authErrorCode(error) === "INVALID_PASSWORD")
+      return {
+        status: "error",
+        message: "No se pudo cambiar la contraseña.",
+        errors: { currentPassword: "Revisa tu contraseña actual." },
+      };
+    return {
+      status: "error",
+      message:
+        "No se pudo cambiar la contraseña. Inténtalo de nuevo o solicita un enlace de recuperación.",
+    };
+  }
+  return {
+    status: "success",
+    message:
+      "Contraseña actualizada. Tu sesión sigue abierta y las demás sesiones se han cerrado.",
+  };
 }
 export async function createSpaceAction(name: string, slug: string) {
   return result(async () => {
