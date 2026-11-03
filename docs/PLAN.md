@@ -86,3 +86,14 @@ Sin nuevas dependencias ni cambios de esquema. El código y las pruebas están p
 - Verificación: 16 pruebas unitarias, 103 comprobaciones de integración y 14 pruebas Playwright sobre producción local. Tipos, ESLint y build correctos.
 
 Sin nuevas dependencias ni migraciones. Correo probado con Mailpit local; SMTP, Neon y Blob de producción siguen pendientes de conexión y validación al disponer de los accesos externos. No se ha realizado push ni despliegue.
+
+## Avance: comparar el borrador con su publicación · 3 de noviembre de 2026
+
+- Selector **Borrador / Publicado** en Vista previa y JSON. Conserva la selección al cambiar de vista e idioma, muestra la fecha de publicación e identifica los campos con cambios. Consultarlo no guarda ni publica.
+- El borrador muestra los cambios actuales del editor, incluso antes del primer guardado. La vista publicada conserva exactamente el snapshot del idioma, incluidos campos desactivados en el modelo actual; el JSON coincide con `fields` de la API.
+- Sin publicación en el idioma seleccionado se muestra una explicación y acceso al borrador; no se sustituye por otro idioma. Publicar, republicar y retirar actualizan la vista con el resultado confirmado del servidor.
+- La carga inicial incluye archivos del borrador y de las publicaciones actuales de la entrada, sin duplicados ni recursos únicamente históricos. Conserva RLS, el filtro por espacio y las URLs privadas; las referencias publicadas siguen siendo identificadores, sin expansión.
+- Compartido el renderizado de archivos entre editor y vista previa. Valores cero y booleanos se muestran correctamente, y el texto largo conserva los saltos de línea. Navegación por teclado y vista móvil comprobadas.
+- Verificación: 20 pruebas unitarias, 111 comprobaciones de integración (41 + 22 + 22 + 26) y 18 pruebas Playwright sobre producción local; tipos, ESLint y build correctos. Los casos nuevos comprueban archivos retirados del borrador, modelos cambiados, aislamiento, igualdad con la API, idiomas sin publicar y ausencia de guardados al cambiar de vista.
+
+Sin dependencias ni migraciones nuevas. La conexión y comprobación de Neon, Blob y correo de producción siguen pendientes del acceso a Vercel. No se ha realizado push ni despliegue.

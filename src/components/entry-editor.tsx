@@ -1,5 +1,4 @@
 "use client";
-import NextImage from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -27,18 +26,15 @@ import type {
   Locale,
   Publication,
 } from "@/lib/types";
-import { activeValues, statusOf, titleOf } from "@/lib/utils";
+import { statusOf, titleOf } from "@/lib/utils";
 import { Button } from "./ui/button";
 import { Input, Textarea } from "./ui/input";
 import { RichText } from "./rich-text";
-import { RichRenderer } from "./rich-renderer";
+import { EntryReadView } from "./entry-read-view";
+import { AssetPreview } from "./asset-preview";
+import type { PreviewSource } from "@/lib/entry-preview";
 import { ResourceField } from "./resource-picker";
-import {
-  assetItem,
-  itemLabel,
-  mergeItems,
-  type PickerItem,
-} from "@/lib/picker-types";
+import { assetItem, mergeItems, type PickerItem } from "@/lib/picker-types";
 import { hasContent } from "@/lib/content-validation";
 export function EntryEditor({
   space,
@@ -58,6 +54,7 @@ export function EntryEditor({
   initialLocale?: Locale;
 }) {
   const router = useRouter();
+  const [previewSource, setPreviewSource] = useState<PreviewSource>("draft");
   const [assets, setAssets] = useState(initialAssets);
   const [entryChoices, setEntryChoices] = useState(initialChoices);
   const [draft, setDraft] = useState({
@@ -368,64 +365,18 @@ export function EntryEditor({
             </div>
           </div>
           <div className="editor-fields">
-            {view === "json" ? (
-              <pre className="json-preview">
-                {JSON.stringify(activeValues(current, type, locale), null, 2)}
-              </pre>
-            ) : view === "preview" ? (
-              <article className="entry-preview">
-                {type.fields
-                  .filter((f) => f.active)
-                  .map((f) => {
-                    const v = (
-                      f.localized ? draft.translations[locale] : draft.shared
-                    )[f.key];
-                    return (
-                      <section key={f.key}>
-                        <small className="eyebrow">{f.name}</small>
-                        {f.type === "rich_text" ? (
-                          <RichRenderer
-                            value={v}
-                            assets={assets}
-                            locale={locale}
-                          />
-                        ) : f.type === "asset" ? (
-                          <AssetPreview
-                            id={String(v ?? "")}
-                            assets={assets}
-                            locale={locale}
-                          />
-                        ) : f.type === "reference" ||
-                          f.type === "references" ? (
-                          <p>
-                            {(Array.isArray(v)
-                              ? v
-                              : typeof v === "string"
-                                ? [v]
-                                : []
-                            )
-                              .map(String)
-                              .map((id) => {
-                                const item = entryChoices.find(
-                                  (item) => item.id === id,
-                                );
-                                return item
-                                  ? itemLabel(item, locale)
-                                  : "Entrada no disponible";
-                              })
-                              .join(", ") || "—"}
-                          </p>
-                        ) : (
-                          <p>
-                            {typeof v === "object"
-                              ? JSON.stringify(v)
-                              : String(v ?? "—")}
-                          </p>
-                        )}
-                      </section>
-                    );
-                  })}
-              </article>
+            {view === "json" || view === "preview" ? (
+              <EntryReadView
+                entry={current}
+                type={type}
+                publications={publications}
+                locale={locale}
+                source={previewSource}
+                onSource={setPreviewSource}
+                view={view}
+                assets={assets}
+                entryChoices={entryChoices}
+              />
             ) : (
               type.fields
                 .filter((f) => f.active)
@@ -668,32 +619,4 @@ export function EntryEditor({
       </div>
     </>
   );
-}
-function AssetPreview({
-  id,
-  assets,
-  locale,
-}: {
-  id: string;
-  assets: Asset[];
-  locale: Locale;
-}) {
-  const a = assets.find((a) => a.id === id);
-  return a?.url ? (
-    <div className="asset-preview">
-      {a.mime.startsWith("image/") ? (
-        <NextImage
-          unoptimized
-          width={1000}
-          height={600}
-          src={a.url}
-          alt={a.alt[locale] ?? ""}
-        />
-      ) : (
-        <a href={a.url} target="_blank" rel="noreferrer">
-          {a.name}
-        </a>
-      )}
-    </div>
-  ) : null;
 }

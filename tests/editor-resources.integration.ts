@@ -117,6 +117,7 @@ try {
       },
       gl: {
         title: "Principal galega",
+        slug: "principal-galega",
         body: {
           type: "doc",
           content: [{ type: "image", attrs: { assetId: assets[2] } }],
@@ -243,6 +244,98 @@ try {
   check(
     (await read({ kind: "entry", exclude: main.id, page: 999999 })).page === 3,
     "Página fuera de rango resuelta",
+  );
+  // Publication previews need current published images even after they leave the draft.
+  for (const locale of ["es", "gl"])
+    await rpc(admin, "publish_entry", {
+      p_space: space,
+      p_id: main.id,
+      p_locale: locale,
+      p_version: main.version,
+    });
+  const changed = await rpc(admin, "save_entry", {
+    p_space: space,
+    p_type: type.id,
+    p_id: main.id,
+    p_version: main.version,
+    p_shared: { related: [entries[1]], cover: assets[4] },
+    p_translations: {
+      es: {
+        title: "Editado",
+        slug: "principal",
+        body: {
+          type: "doc",
+          content: [{ type: "image", attrs: { assetId: assets[3] } }],
+        },
+      },
+      gl: {
+        title: "Editado galego",
+        slug: "principal-galega",
+        body: {
+          type: "doc",
+          content: [{ type: "image", attrs: { assetId: assets[5] } }],
+        },
+      },
+    },
+  });
+  const withPublished = await getLinkedResources(editor, space, main.id);
+  check(
+    withPublished.assets.length === 6 &&
+      assets
+        .slice(0, 6)
+        .every((id) => withPublished.assets.some((a) => a.id === id)),
+    "Carga imágenes del borrador y de las publicaciones actuales de ambos idiomas",
+  );
+  check(
+    new Set(withPublished.assets.map((a) => a.id)).size ===
+      withPublished.assets.length,
+    "No duplica archivos compartidos entre idiomas y versiones",
+  );
+  check(
+    withPublished.entryChoices.length === 1 &&
+      withPublished.entryChoices[0].id === entries[1],
+    "Las etiquetas de referencias siguen limitadas al borrador; las publicadas usan identificadores",
+  );
+  check(
+    !(await getLinkedResources(editor, other, main.id)).assets.length &&
+      !(await getLinkedResources(editor, space, foreign.id)).assets.length,
+    "Manipular el espacio o la entrada no revela recursos publicados de otro cliente",
+  );
+  check(
+    !(await getLinkedResources(process.env.OTHER_ID!, space, main.id)).assets
+      .length,
+    "Otra cuenta sin acceso tampoco puede leer imágenes publicadas desde el editor",
+  );
+  await rpc(admin, "publish_entry", {
+    p_space: space,
+    p_id: main.id,
+    p_locale: "es",
+    p_version: changed.version,
+  });
+  const republished = await getLinkedResources(editor, space, main.id);
+  check(
+    !republished.assets.some((a) => a.id === assets[1]) &&
+      republished.assets.some((a) => a.id === assets[2]),
+    "Republicar excluye imágenes solo históricas y conserva las de la publicación del otro idioma",
+  );
+  await rpc(admin, "unpublish_entry", {
+    p_space: space,
+    p_id: main.id,
+    p_locale: "gl",
+  });
+  const unpublished = await getLinkedResources(editor, space, main.id);
+  check(
+    unpublished.assets.length === 3 &&
+      unpublished.assets.every((a) =>
+        [assets[3], assets[4], assets[5]].includes(a.id),
+      ),
+    "Retirar la publicación elimina sus recursos de la carga inicial y mantiene los del borrador",
+  );
+  check(
+    unpublished.assets.every(
+      (a) => a.url?.includes("signature=") && !("storage_url" in a),
+    ),
+    "Los recursos publicados también se entregan con URLs privadas y sin ruta interna de Blob",
   );
   console.log(
     `Selectores PostgreSQL: ${checks} comprobaciones superadas de recursos vinculados, búsquedas e aislamiento.`,

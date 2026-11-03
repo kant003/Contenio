@@ -32,6 +32,7 @@ El buzón de pruebas para recuperar contraseñas está en http://localhost:58025
 - Texto, editor enriquecido, números, booleanos, fechas, archivos y referencias.
 - Autoguardado, guardado manual y control de conflictos. Ctrl/Cmd+S guarda.
 - Publicaciones inmutables e independientes por idioma; editar borradores no cambia la web.
+- Vista previa y JSON con selector Borrador/Publicado y resumen de campos con cambios.
 - Imágenes JPEG, PNG, WebP, AVIF y PDF de hasta 10 MiB, con URLs firmadas de 15 minutos.
 - API de lectura por espacio; claves revocables de las que solo se almacena el hash.
 
@@ -92,7 +93,15 @@ Al subir un archivo se vuelve a los recientes, conservando el idioma, para que l
 
 En el editor, los botones de archivos y relaciones abren un selector con búsqueda y hasta 12 resultados por página. Las relaciones múltiples conservan la selección al buscar o cambiar de página; «Usar selección» confirma los cambios y «Cancelar» o Escape los descartan. Puedes desmarcar todas las referencias para vaciar la lista. Las imágenes de Tiptap usan el mismo selector, mostrando solo imágenes.
 
-La carga inicial del editor consulta únicamente la entrada abierta y los recursos que ya utiliza, en ambos idiomas. Las etiquetas de las referencias se recuperan sin sus cuerpos. El endpoint interno `/api/editor/spaces/{spaceId}/choices` requiere una sesión de editor o administrador y permisos sobre el espacio; no acepta claves públicas de lectura. Sus respuestas son privadas y no se almacenan en caché. Las búsquedas se pueden reintentar sin modificar el borrador.
+La carga inicial del editor consulta únicamente la entrada abierta y los archivos utilizados por su borrador o sus publicaciones actuales, en ambos idiomas. No carga los archivos que solo aparecen en publicaciones históricas. Las etiquetas de las referencias del borrador se recuperan sin sus cuerpos. El endpoint interno `/api/editor/spaces/{spaceId}/choices` requiere una sesión de editor o administrador y permisos sobre el espacio; no acepta claves públicas de lectura. Sus respuestas son privadas y no se almacenan en caché. Las búsquedas se pueden reintentar sin modificar el borrador.
+
+## Revisar antes de publicar
+
+En **Vista previa** y **JSON**, el selector **Borrador / Publicado** permite comparar el contenido del editor con la publicación del idioma elegido. El borrador incluye cambios todavía sin guardar; cambiar de vista o versión no guarda ni publica. El resumen identifica los campos que difieren, incluidos campos compartidos y desactivados después de publicar.
+
+La vista publicada usa exactamente los campos de la publicación vigente cargada al abrir la entrada o al publicar/retirar desde el editor. Conserva los campos desactivados y las imágenes retiradas del borrador mientras sigan en esa publicación. Al cambiar de idioma mantiene la versión elegida; un idioma sin publicación muestra un estado vacío, sin recurrir al otro idioma. Republicar o retirar actualiza ambas vistas.
+
+El JSON publicado contiene el objeto `fields` de la API. Las referencias siguen siendo identificadores, sin expansión; la vista visual utiliza los metadatos actuales de los archivos y los nombres actuales de los campos. Esta vista ayuda a revisar el contenido; la web consumidora controla su presentación final.
 
 ## Despliegue
 

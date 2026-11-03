@@ -96,7 +96,7 @@ export async function getResourcePage(
     pageSize: MEDIA_PAGE_SIZE,
   };
 }
-/** Load only resources already used by this draft, including images in both locales. */
+/** Load resources used by this draft or its current publications, never the full history. */
 export async function getLinkedResources(
   userId: string,
   spaceId: string,
@@ -108,8 +108,13 @@ export async function getLinkedResources(
     userQuery<Asset>(
       userId,
       `select a.id,a.space_id,a.path,a.name,a.mime,a.size,a.alt,a.description
-      from assets a join asset_links l on l.asset_id=a.id and l.space_id=a.space_id
-      where l.space_id=$1 and l.entry_id=$2`,
+      from assets a where a.space_id=$1 and a.id in (
+        select l.asset_id from asset_links l where l.space_id=$1 and l.entry_id=$2
+        union
+        select l.asset_id from publication_asset_links l
+        join publication_heads h on h.publication_id=l.publication_id and h.space_id=l.space_id
+        where h.space_id=$1 and h.entry_id=$2
+      )`,
       [spaceId, entryId],
     ),
     userQuery<{ id: string }>(

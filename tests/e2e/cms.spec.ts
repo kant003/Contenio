@@ -800,3 +800,417 @@ test.describe("selectores del editor", () => {
     await expect(page.locator("#field-cover")).toBeFocused();
   });
 });
+
+test.describe("vista previa del borrador y la publicación", () => {
+  let previewSpace: string,
+    previewEntry: string,
+    referencedEntry: string,
+    previewType: string;
+  let readKey: string;
+  const previewAssets: string[] = [];
+  test.beforeAll(async () => {
+    const { randomBytes, createHash } = await import("node:crypto");
+    previewSpace = await rpc(process.env.ADMIN_ID!, "create_space", {
+      p_name: "Publicaciones E2E",
+      p_slug: `preview-${randomUUID()}`,
+    });
+    await rpc(process.env.ADMIN_ID!, "set_member", {
+      p_space: previewSpace,
+      p_email: process.env.EDITOR_EMAIL,
+    });
+    const { rows } = await pool().query(
+      "select * from content_types where space_id=$1",
+      [previewSpace],
+    );
+    const type = rows[0];
+    previewType = type.id;
+    const fields = [
+      ...type.fields,
+      ...[
+        { key: "cover", name: "Portada", type: "asset" },
+        { key: "count", name: "Cantidad", type: "number" },
+        { key: "visible", name: "Visible", type: "boolean" },
+        { key: "legacy", name: "Anterior", type: "short_text" },
+        { key: "related", name: "Relacionadas", type: "references" },
+      ].map((field) => ({
+        ...field,
+        active: true,
+        localized: false,
+        required: false,
+        help: "",
+      })),
+    ];
+    const saveType = (fields: unknown[]) =>
+      rpc(process.env.ADMIN_ID!, "save_content_type", {
+        p_space: previewSpace,
+        p_id: type.id,
+        p_key: type.key,
+        p_name: type.name,
+        p_description: type.description,
+        p_fields: fields,
+      });
+    await saveType(fields);
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    for (const name of ["publicada.png", "borrador.png"]) {
+      const id = randomUUID();
+      previewAssets.push(id);
+      await rpc(process.env.ADMIN_ID!, "register_asset", {
+        p_space: previewSpace,
+        p_id: id,
+        p_name: name,
+        p_mime: "image/png",
+        p_size: png.length,
+      });
+      await storeAsset(previewSpace, id, png, "image/png");
+    }
+    const body = (text: string) => ({
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+    });
+    const related = await rpc(process.env.ADMIN_ID!, "save_entry", {
+      p_space: previewSpace,
+      p_type: type.id,
+      p_id: null,
+      p_version: 0,
+      p_shared: {},
+      p_translations: {
+        es: {
+          title: "Título de borrador relacionado",
+          slug: "relacionada",
+          body: body("Referencia no expandida"),
+        },
+        gl: {},
+      },
+    });
+    referencedEntry = related.id;
+    const original = await rpc(process.env.ADMIN_ID!, "save_entry", {
+      p_space: previewSpace,
+      p_type: type.id,
+      p_id: null,
+      p_version: 0,
+      p_shared: {
+        cover: previewAssets[0],
+        count: 5,
+        visible: true,
+        legacy: "Valor publicado anterior",
+        related: [related.id],
+      },
+      p_translations: {
+        es: {
+          title: "Versión pública original",
+          slug: "preview-es",
+          body: {
+            type: "doc",
+            content: [
+              ...body("Texto público original").content,
+              { type: "image", attrs: { assetId: previewAssets[0] } },
+            ],
+          },
+        },
+        gl: {
+          title: "Borrador galego",
+          slug: "preview-gl",
+          body: body("Texto galego sen publicar"),
+        },
+      },
+    });
+    previewEntry = original.id;
+    await rpc(process.env.ADMIN_ID!, "publish_entry", {
+      p_space: previewSpace,
+      p_id: previewEntry,
+      p_locale: "es",
+      p_version: original.version,
+    });
+    await rpc(process.env.ADMIN_ID!, "save_entry", {
+      p_space: previewSpace,
+      p_type: type.id,
+      p_id: previewEntry,
+      p_version: original.version,
+      p_shared: {
+        cover: previewAssets[1],
+        count: 0,
+        visible: false,
+        legacy: "Valor guardado desactivado",
+        related: [],
+      },
+      p_translations: {
+        ...original.translations,
+        es: {
+          title: "Cambios del borrador",
+          slug: "preview-es",
+          body: body("Texto nuevo del borrador"),
+        },
+      },
+    });
+    await saveType(
+      fields.map((field) =>
+        field.key === "legacy" ? { ...field, active: false } : field,
+      ),
+    );
+    readKey = `ct_${randomBytes(32).toString("hex")}`;
+    await rpc(process.env.ADMIN_ID!, "create_read_key", {
+      p_space: previewSpace,
+      p_name: "Preview E2E",
+      p_prefix: readKey.slice(0, 11),
+      p_hash: createHash("sha256").update(readKey).digest("hex"),
+    });
+  });
+  test.afterAll(async () => {
+    await cleanSpaces(previewSpace ? [previewSpace] : []);
+  });
+  const open = async (page: Page) => {
+    await login(page);
+    await page.goto(`/spaces/${previewSpace}/content/${previewEntry}`);
+    await page
+      .getByRole("button", { name: "Vista previa", exact: true })
+      .click();
+  };
+  test("compara versiones sin guardar y conserva los campos e imágenes de la publicación", async ({
+    page,
+    request,
+  }) => {
+    const before = (
+      await pool().query("select version,updated_at from entries where id=$1", [
+        previewEntry,
+      ])
+    ).rows[0];
+    await open(page);
+    const draft = page.getByRole("article", {
+      name: "Vista previa del borrador",
+      exact: true,
+    });
+    await expect(draft).toContainText("Cambios del borrador");
+    await expect(draft).toContainText("Texto nuevo del borrador");
+    await expect(draft.getByText("No", { exact: true })).toBeVisible();
+    await expect(draft.getByText("0", { exact: true })).toBeVisible();
+    await expect(draft).not.toContainText("Valor guardado desactivado");
+    await expect(draft.locator("img")).toHaveCount(1);
+    await expect(draft.locator("img")).toHaveAttribute(
+      "src",
+      new RegExp(previewAssets[1]),
+    );
+    const source = page.getByRole("group", { name: "Versión del contenido" });
+    await source
+      .getByRole("button", { name: "Publicado", exact: true })
+      .click();
+    const published = page.getByRole("article", {
+      name: "Vista previa del contenido publicado",
+      exact: true,
+    });
+    await expect(published).toContainText("Versión pública original");
+    await expect(published).toContainText("Valor publicado anterior");
+    await expect(published).toContainText("Desactivado en el modelo actual");
+    await expect(published).toContainText(referencedEntry);
+    await expect(published).not.toContainText("Título de borrador relacionado");
+    await expect(published.locator("img")).toHaveCount(2);
+    for (const img of await published.locator("img").all()) {
+      await expect(img).toHaveAttribute("src", new RegExp(previewAssets[0]));
+      await expect
+        .poll(() =>
+          img.evaluate((element: HTMLImageElement) => element.naturalWidth),
+        )
+        .toBeGreaterThan(0);
+    }
+    await expect(page.locator(".preview-changes")).toContainText("Título");
+    await expect(page.locator(".preview-changes")).toContainText("Anterior");
+    await page.screenshot({
+      path: test.info().outputPath("preview-desktop.png"),
+      fullPage: true,
+    });
+    await page.getByRole("button", { name: "JSON", exact: true }).click();
+    await expect(
+      source.getByRole("button", { name: "Publicado", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    const response = await request.get(
+      `/api/v1/spaces/${previewSpace}/entries/${previewEntry}?locale=es`,
+      { headers: { Authorization: `Bearer ${readKey}` } },
+    );
+    expect(response.status()).toBe(200);
+    expect(
+      JSON.parse((await page.locator("pre.json-preview").textContent())!),
+    ).toEqual((await response.json()).fields);
+    await source.getByRole("button", { name: "Borrador", exact: true }).click();
+    const json = JSON.parse(
+      (await page.locator("pre.json-preview").textContent())!,
+    );
+    expect(json.title).toBe("Cambios del borrador");
+    expect(json.count).toBe(0);
+    expect(json.visible).toBe(false);
+    expect(json).not.toHaveProperty("legacy");
+    expect(
+      (
+        await pool().query(
+          "select version,updated_at from entries where id=$1",
+          [previewEntry],
+        )
+      ).rows[0],
+    ).toEqual(before);
+  });
+  test("mantiene la versión elegida entre idiomas y explica la publicación ausente en móvil", async ({
+    page,
+    request,
+  }) => {
+    await open(page);
+    const source = page.getByRole("group", { name: "Versión del contenido" });
+    await source
+      .getByRole("button", { name: "Publicado", exact: true })
+      .click();
+    await page.getByRole("button", { name: "GL", exact: true }).click();
+    await expect(
+      source.getByRole("button", { name: "Publicado", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      page.getByRole("heading", { name: "Sin contenido publicado" }),
+    ).toBeVisible();
+    await expect(page.locator(".preview-context")).toContainText(
+      "Todavía no hay publicación en GL",
+    );
+    await expect(page.locator(".entry-read-view")).not.toContainText(
+      "Versión pública original",
+    );
+    await page.getByRole("button", { name: "JSON", exact: true }).click();
+    await expect(page.locator("pre.json-preview")).toHaveCount(0);
+    const response = await request.get(
+      `/api/v1/spaces/${previewSpace}/entries/${previewEntry}?locale=gl`,
+      { headers: { Authorization: `Bearer ${readKey}` } },
+    );
+    expect(response.status()).toBe(404);
+    await page
+      .getByRole("button", { name: "Ver borrador", exact: true })
+      .click();
+    expect(
+      JSON.parse((await page.locator("pre.json-preview").textContent())!).title,
+    ).toBe("Borrador galego");
+    await page
+      .getByRole("button", { name: "Vista previa", exact: true })
+      .click();
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(390);
+    await page.screenshot({
+      path: test.info().outputPath("preview-mobile.png"),
+      fullPage: true,
+    });
+    await source
+      .getByRole("button", { name: "Publicado", exact: true })
+      .focus();
+    await page.keyboard.press("Enter");
+    await expect(
+      page.getByRole("heading", { name: "Sin contenido publicado" }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: test.info().outputPath("preview-empty-mobile.png"),
+      fullPage: true,
+    });
+  });
+  test("actualiza la vista publicada al republicar y la vacía al retirar sin publicar el otro idioma", async ({
+    page,
+    request,
+  }) => {
+    await open(page);
+    await page
+      .getByRole("group", { name: "Versión del contenido" })
+      .getByRole("button", { name: "Publicado", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Publicar en ES", exact: true })
+      .click();
+    await expect(page.locator(".publish-status .badge")).toHaveText(
+      "Publicado",
+    );
+    const published = page.getByRole("article", {
+      name: "Vista previa del contenido publicado",
+      exact: true,
+    });
+    await expect(published).toContainText("Cambios del borrador");
+    await expect(published).not.toContainText("Valor publicado anterior");
+    await expect(published.locator("img")).toHaveCount(1);
+    await expect(published.locator("img")).toHaveAttribute(
+      "src",
+      new RegExp(previewAssets[1]),
+    );
+    await expect(page.locator(".preview-context")).toContainText(
+      "El borrador coincide",
+    );
+    await page.getByRole("button", { name: "JSON", exact: true }).click();
+    const response = await request.get(
+      `/api/v1/spaces/${previewSpace}/entries/${previewEntry}?locale=es`,
+      { headers: { Authorization: `Bearer ${readKey}` } },
+    );
+    expect(
+      JSON.parse((await page.locator("pre.json-preview").textContent())!),
+    ).toEqual((await response.json()).fields);
+    await page
+      .getByRole("button", { name: "Retirar publicación", exact: true })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "Sin contenido publicado" }),
+    ).toBeVisible();
+    await expect(page.locator("pre.json-preview")).toHaveCount(0);
+    expect(
+      (
+        await request.get(
+          `/api/v1/spaces/${previewSpace}/entries/${previewEntry}?locale=es`,
+          { headers: { Authorization: `Bearer ${readKey}` } },
+        )
+      ).status(),
+    ).toBe(404);
+    await page.getByRole("button", { name: "GL", exact: true }).click();
+    await expect(page.locator(".preview-context")).toContainText(
+      "Todavía no hay publicación en GL",
+    );
+  });
+  test("muestra cambios sin guardar en una entrada nueva y no crea una publicación", async ({
+    page,
+  }) => {
+    await login(page);
+    const before = (
+      await pool().query(
+        "select count(*)::int as total from entries where space_id=$1",
+        [previewSpace],
+      )
+    ).rows[0].total;
+    await page.goto(`/spaces/${previewSpace}/content/new?type=${previewType}`);
+    await page.locator("#field-title").fill("Idea todavía sin guardar");
+    await page.locator("#field-count").fill("0");
+    await page
+      .locator('.tiptap[aria-label="Contenido"]')
+      .fill("Texto que solo existe en este editor");
+    await page
+      .getByRole("button", { name: "Vista previa", exact: true })
+      .click();
+    await expect(
+      page.getByRole("article", {
+        name: "Vista previa del borrador",
+        exact: true,
+      }),
+    ).toContainText("Texto que solo existe en este editor");
+    await page.getByRole("button", { name: "JSON", exact: true }).click();
+    expect(
+      JSON.parse((await page.locator("pre.json-preview").textContent())!),
+    ).toMatchObject({ title: "Idea todavía sin guardar", count: 0 });
+    await page
+      .getByRole("group", { name: "Versión del contenido" })
+      .getByRole("button", { name: "Publicado", exact: true })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: "Sin contenido publicado" }),
+    ).toBeVisible();
+    expect(
+      (
+        await pool().query(
+          "select count(*)::int as total from entries where space_id=$1",
+          [previewSpace],
+        )
+      ).rows[0].total,
+    ).toBe(before);
+    await page.getByRole("button", { name: "Editor", exact: true }).click();
+    await expect(page.locator("#field-title")).toHaveValue(
+      "Idea todavía sin guardar",
+    );
+  });
+});
