@@ -15,6 +15,13 @@ Vercel aloja la aplicación Next.js. PostgreSQL se aprovisiona con la integraci�
 9. Crea los espacios y las cuentas editoras. Asigna cada editor desde Ajustes y genera una clave por web consumidora.
 10. Verifica login/logout, recuperación (enlace caducado y de un solo uso), cambio desde Mi cuenta y cierre de otras sesiones, ES/GL, aislamiento entre dos clientes, subidas pequeñas y mayores de 4.5 MiB, publicación, API y revocación en el dominio definitivo.
 
+## Avisos de instalación
+
+- El proyecto fija `engines.node` en `24.x`, alineado con `.nvmrc`, para que Vercel no cambie automáticamente de versión mayor de Node. El lockfile conserva el mismo requisito.
+- `allowScripts` aprueba únicamente el instalador de `esbuild@0.28.2`, revisado para preparar y comprobar su binario. Si cambia esa versión, hay que revisar y aprobar el nuevo script; no se habilitan todos los scripts de dependencias.
+- ESLint 9 está fuera de soporte, pero `eslint-plugin-react@7.37.5`, utilizado por la configuración actual de Next, todavía declara compatibilidad hasta ESLint 9. Se mantiene pendiente una actualización coordinada; no se fuerzan dependencias incompatibles para ocultar el aviso.
+- El proyecto no define `cache-dir` en configuración npm. Si Vercel muestra ese aviso, comprobar la configuración del entorno de instalación y las variables `npm_config_*`; no afecta por sí solo al resultado de la compilación.
+
 ## Operación
 
 - Ejecuta tipos, lint, pruebas y build antes de desplegar. Los tests automatizados nunca se ejecutan contra una base remota.
