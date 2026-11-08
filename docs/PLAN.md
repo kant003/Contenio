@@ -97,3 +97,14 @@ Sin nuevas dependencias ni migraciones. Correo probado con Mailpit local; SMTP, 
 - Verificación: 20 pruebas unitarias, 111 comprobaciones de integración (41 + 22 + 22 + 26) y 18 pruebas Playwright sobre producción local; tipos, ESLint y build correctos. Los casos nuevos comprueban archivos retirados del borrador, modelos cambiados, aislamiento, igualdad con la API, idiomas sin publicar y ausencia de guardados al cambiar de vista.
 
 Sin dependencias ni migraciones nuevas. La conexión y comprobación de Neon, Blob y correo de producción siguen pendientes del acceso a Vercel. No se ha realizado push ni despliegue.
+
+## Avance: recuperación del guardado y conflictos
+
+- El guardado en curso comparte un resultado seguro con las acciones que esperan por él: un fallo de conexión conserva el borrador y cancela la navegación pendiente, sin rechazos de promesas sin tratar ni reintentos silenciosos.
+- Al navegar con cambios pendientes se espera a la operación actual y se guardan también las últimas ediciones de ambos idiomas antes de salir. Eliminado el segundo manejador de guardado del enlace de vuelta al listado.
+- Recuperación visible con reintento de guardado y copia JSON descargable: datos comunes, ES/GL, definición del modelo y versión base. La descarga no guarda ni publica, no contiene credenciales ni binarios y puede consultarse para copiar cambios manualmente.
+- Confirmación accesible antes de descartar y recargar la versión del servidor, con cancelación y descarga de copia desde el diálogo. Los enlaces de descarga no activan el guardado previo a navegar.
+- También se bloquean los conflictos detectados al publicar sin cambios locales. Una entrada con conflicto no permite guardar, publicar, retirar ni eliminar desde esa sesión hasta recargar; se conserva la publicación anterior.
+- Verificación: 22 pruebas unitarias, 111 comprobaciones de integración y 22 pruebas Playwright sobre producción local; tipos, ESLint y build correctos. Casos nuevos: conexión interrumpida con navegación esperando, reintento y persistencia ES/GL, guardado lento con ediciones posteriores, dos sesiones concurrentes y publicación con versión antigua. Copias JSON y diálogo comprobados en navegador y móvil.
+
+Sin migraciones, dependencias, push ni despliegue. Neon, Blob y SMTP de producción siguen pendientes del acceso a Vercel. Las copias son manuales y no añaden importación ni edición simultánea.

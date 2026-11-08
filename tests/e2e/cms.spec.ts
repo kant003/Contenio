@@ -1214,3 +1214,291 @@ test.describe("vista previa del borrador y la publicación", () => {
     );
   });
 });
+
+test.describe("recuperación del guardado y conflictos", () => {
+  const createDraft = async (published = false) => {
+    const entry = await rpc(process.env.ADMIN_ID!, "save_entry", {
+      p_space: space,
+      p_type: model,
+      p_id: null,
+      p_version: 0,
+      p_shared: {},
+      p_translations: {
+        es: {
+          title: "Original ES",
+          slug: `seguro-${randomUUID()}`,
+          body: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [{ type: "text", text: "Contenido original" }],
+              },
+            ],
+          },
+        },
+        gl: { title: "Orixinal GL" },
+      },
+    });
+    if (published)
+      await rpc(process.env.ADMIN_ID!, "publish_entry", {
+        p_space: space,
+        p_id: entry.id,
+        p_locale: "es",
+        p_version: entry.version,
+      });
+    return entry;
+  };
+  const readDraft = async (id: string) =>
+    (await pool().query("select * from entries where id=$1", [id])).rows[0];
+  const isAction = (request: import("@playwright/test").Request) =>
+    request.method() === "POST" && Boolean(request.headers()["next-action"]);
+  const readDownload = async (
+    page: Page,
+    scope = page.getByRole("alert").filter({ hasText: "Descarga una copia" }),
+  ) => {
+    const downloaded = page.waitForEvent("download");
+    await scope
+      .getByRole("button", { name: "Descargar mis cambios", exact: true })
+      .click();
+    const download = await downloaded;
+    expect(download.suggestedFilename()).toMatch(/^contenio-page-.+\.json$/);
+    const { readFile } = await import("node:fs/promises");
+    return JSON.parse(await readFile((await download.path())!, "utf8"));
+  };
+  test("conserva cambios y permite descargar y reintentar tras un fallo de conexión", async ({
+    page,
+  }) => {
+    const entry = await createDraft();
+    await login(page);
+    await page.goto(`/spaces/${space}/content/${entry.id}`);
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    let offline = true;
+    let attempts = 0;
+    let release!: () => void, started!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const firstRequest = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    await page.route("**/*", async (route) => {
+      if (offline && isAction(route.request())) {
+        if (++attempts === 1) {
+          started();
+          await barrier;
+        }
+        await route.abort("connectionfailed");
+      } else await route.continue();
+    });
+    await page.locator("#field-title").fill("Cambios ES sin conexión");
+    await firstRequest;
+    try {
+      await page.getByRole("button", { name: "GL", exact: true }).click();
+      await page.locator("#field-title").fill("Cambios GL sen conexión");
+      await page
+        .getByRole("link", { name: "Todas las entradas", exact: true })
+        .click();
+    } finally {
+      release();
+    }
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Descarga una copia" }),
+    ).toContainText("No se pudo conectar");
+    await expect(page).toHaveURL(new RegExp(`/content/${entry.id}`));
+    await expect(page.locator("#field-title")).toHaveValue(
+      "Cambios GL sen conexión",
+    );
+    const copy = await readDownload(page);
+    expect(copy.translations.es.title).toBe("Cambios ES sin conexión");
+    expect(copy.translations.gl.title).toBe("Cambios GL sen conexión");
+    expect(copy.baseVersion).toBe(1);
+    expect((await readDraft(entry.id)).version).toBe(1);
+    offline = false;
+    await page
+      .getByRole("button", { name: "Reintentar guardado", exact: true })
+      .click();
+    await expect(page.getByRole("status")).toHaveText(
+      "Todos los cambios guardados",
+    );
+    const saved = await readDraft(entry.id);
+    expect(saved.translations.es.title).toBe(copy.translations.es.title);
+    expect(saved.translations.gl.title).toBe(copy.translations.gl.title);
+    expect(saved.version).toBe(2);
+    expect(pageErrors).toEqual([]);
+    await page.reload();
+    await expect(page.locator("#field-title")).toHaveValue(
+      "Cambios GL sen conexión",
+    );
+  });
+  test("espera al guardado pendiente y guarda las últimas ediciones antes de navegar", async ({
+    page,
+  }) => {
+    const entry = await createDraft();
+    await login(page);
+    await page.goto(`/spaces/${space}/content/${entry.id}`);
+    let release!: () => void, started!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const firstRequest = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    let actions = 0;
+    await page.route("**/*", async (route) => {
+      if (isAction(route.request()) && ++actions === 1) {
+        started();
+        await barrier;
+      }
+      await route.continue();
+    });
+    await page.locator("#field-title").fill("Primera edición ES");
+    await page.getByRole("button", { name: "Guardar", exact: true }).click();
+    await firstRequest;
+    try {
+      await page.locator("#field-title").fill("Última edición ES");
+      await page.getByRole("button", { name: "GL", exact: true }).click();
+      await page.locator("#field-title").fill("Última edición GL");
+      await page
+        .getByRole("link", { name: "Todas las entradas", exact: true })
+        .click();
+    } finally {
+      release();
+    }
+    await expect(page).toHaveURL(new RegExp(`/spaces/${space}/content$`));
+    const saved = await readDraft(entry.id);
+    expect(saved.translations.es.title).toBe("Última edición ES");
+    expect(saved.translations.gl.title).toBe("Última edición GL");
+    expect(saved.version).toBe(3);
+    expect(actions).toBe(2);
+  });
+  test("detecta dos sesiones y permite conservar una copia antes de descartar y recargar", async ({
+    page,
+    browser,
+  }) => {
+    const entry = await createDraft();
+    await login(page);
+    await page.goto(`/spaces/${space}/content/${entry.id}`);
+    const other = await browser.newContext({
+      baseURL: "http://localhost:3100",
+    });
+    try {
+      const second = await other.newPage();
+      await login(second);
+      await second.goto(`/spaces/${space}/content/${entry.id}`);
+      await second.locator("#field-title").fill("Guardado por la otra sesión");
+      await second
+        .getByRole("button", { name: "Guardar", exact: true })
+        .click();
+      await expect(second.getByRole("status")).toHaveText(
+        "Todos los cambios guardados",
+      );
+      await page.locator("#field-title").fill("Mi versión local ES");
+      await page.getByRole("button", { name: "GL", exact: true }).click();
+      await page.locator("#field-title").fill("A miña versión GL");
+      await page.getByRole("button", { name: "Guardar", exact: true }).click();
+      await expect(
+        page.getByRole("alert").filter({ hasText: "Descarga una copia" }),
+      ).toContainText("Otra sesión ha cambiado");
+      await expect(
+        page.getByRole("button", { name: "Guardar", exact: true }),
+      ).toBeDisabled();
+      await expect(
+        page.getByRole("button", { name: "Publicar en GL", exact: true }),
+      ).toBeDisabled();
+      const copy = await readDownload(page);
+      expect(copy.translations.es.title).toBe("Mi versión local ES");
+      expect(copy.translations.gl.title).toBe("A miña versión GL");
+      expect(copy.baseVersion).toBe(1);
+      expect((await readDraft(entry.id)).translations.es.title).toBe(
+        "Guardado por la otra sesión",
+      );
+      await page
+        .getByRole("button", { name: "Recargar entrada", exact: true })
+        .click();
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expect(page.locator("#field-title")).toHaveValue(
+        "A miña versión GL",
+      );
+      await page
+        .getByRole("button", { name: "Recargar entrada", exact: true })
+        .click();
+      await page
+        .getByRole("dialog")
+        .getByRole("button", { name: "Descartar y recargar", exact: true })
+        .click();
+      await expect(
+        page.getByRole("alert").filter({ hasText: "Descarga una copia" }),
+      ).toHaveCount(0);
+      await expect(page.locator("#field-title")).toHaveValue("Orixinal GL");
+      await page.getByRole("button", { name: "ES", exact: true }).click();
+      await expect(page.locator("#field-title")).toHaveValue(
+        "Guardado por la otra sesión",
+      );
+    } finally {
+      await other.close();
+    }
+  });
+  test("bloquea la publicación con una versión antigua aunque el borrador local no tenga cambios", async ({
+    page,
+  }) => {
+    const entry = await createDraft(true);
+    await login(page);
+    await page.goto(`/spaces/${space}/content/${entry.id}`);
+    await rpc(process.env.ADMIN_ID!, "save_entry", {
+      p_space: space,
+      p_type: model,
+      p_id: entry.id,
+      p_version: entry.version,
+      p_shared: entry.shared,
+      p_translations: {
+        ...entry.translations,
+        es: { ...entry.translations.es, title: "Más reciente en el servidor" },
+      },
+    });
+    await page
+      .getByRole("button", { name: "Publicar en ES", exact: true })
+      .click();
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Descarga una copia" }),
+    ).toContainText("Otra sesión ha cambiado");
+    await expect(
+      page.getByRole("button", { name: "Retirar publicación", exact: true }),
+    ).toBeDisabled();
+    const { rows } = await pool().query(
+      "select fields from current_publications where entry_id=$1 and locale='es'",
+      [entry.id],
+    );
+    expect(rows[0].fields.title).toBe("Original ES");
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(390);
+    const copyButton = page.getByRole("button", {
+      name: "Descargar mis cambios",
+      exact: true,
+    });
+    expect((await copyButton.boundingBox())!.height).toBeLessThan(70);
+    await page.screenshot({
+      path: test.info().outputPath("conflicto-mobile.png"),
+      fullPage: true,
+    });
+    await page
+      .getByRole("button", { name: "Recargar entrada", exact: true })
+      .click();
+    const copy = await readDownload(page, page.getByRole("dialog"));
+    await page.screenshot({
+      path: test.info().outputPath("recarga-mobile.png"),
+      fullPage: true,
+    });
+    expect(copy.translations.es.title).toBe("Original ES");
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Seguir editando", exact: true })
+      .click();
+    await expect(page.locator("#field-title")).toHaveValue("Original ES");
+  });
+});

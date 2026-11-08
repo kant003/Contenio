@@ -2944,3 +2944,23 @@ input[type="checkbox"] {
 .preview-references {
   font-family: monospace;
 }
+
+.notice.editor-recovery {
+  display: block;
+}
+.editor-recovery > strong {
+  display: block;
+  font-size: 14px;
+}
+.editor-recovery > p {
+  margin: 10px 0;
+}
+.recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+.recovery-actions .button {
+  white-space: normal;
+}

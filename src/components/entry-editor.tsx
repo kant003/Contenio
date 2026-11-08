@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
+  AlertTriangle,
+  Download,
   Check,
   CheckCheck,
   Code2,
@@ -29,6 +31,8 @@ import type {
 import { statusOf, titleOf } from "@/lib/utils";
 import { Button } from "./ui/button";
 import { Input, Textarea } from "./ui/input";
+import { Dialog } from "./ui/dialog";
+import { serializeDraftBackup } from "@/lib/draft-backup";
 import { RichText } from "./rich-text";
 import { EntryReadView } from "./entry-read-view";
 import { AssetPreview } from "./asset-preview";
@@ -54,6 +58,11 @@ export function EntryEditor({
   initialLocale?: Locale;
 }) {
   const router = useRouter();
+  const [reloadOpen, setReloadOpen] = useState(false);
+  const [recoverable, setRecoverable] = useState<"save" | "publication" | null>(
+    null,
+  );
+  const discardConfirmed = useRef(false);
   const [previewSource, setPreviewSource] = useState<PreviewSource>("draft");
   const [assets, setAssets] = useState(initialAssets);
   const [entryChoices, setEntryChoices] = useState(initialChoices);
@@ -105,7 +114,8 @@ export function EntryEditor({
     async function persistDraft(): Promise<Entry | undefined> {
       if (conflict.current) return;
       if (flight.current) {
-        await flight.current;
+        const previous = await flight.current;
+        if (!previous) return;
         return persistDraft();
       }
       if (currentId.current && saved.current === JSON.stringify(latest.current))
@@ -119,53 +129,57 @@ export function EntryEditor({
         serialized = JSON.stringify(capture);
       setSaving(true);
       setError("");
+      setRecoverable(null);
       const task = (async () => {
-        const r = await saveEntryAction({
-          space,
-          type: type.id,
-          id: currentId.current,
-          version: version.current,
-          ...capture,
-        });
-        if (r.error) {
-          setError(r.error);
-          setMessage("No se ha guardado");
-          if (r.error.includes("CONFLICT")) {
-            conflict.current = true;
-            setHasConflict(true);
+        try {
+          const r = await saveEntryAction({
+            space,
+            type: type.id,
+            id: currentId.current,
+            version: version.current,
+            ...capture,
+          });
+          if (r.error) {
+            setRecoverable("save");
+            setError(r.error);
+            setMessage("No se ha guardado");
+            if (r.error.includes("CONFLICT")) {
+              conflict.current = true;
+              setHasConflict(true);
+              setMessage("Conflicto sin resolver");
+            }
+            return;
           }
-          return;
-        }
-        const entry = r.data!;
-        currentId.current = entry.id;
-        setPersistedId(entry.id);
-        version.current = entry.version;
-        saved.current = serialized;
-        const caughtUp = serialized === JSON.stringify(latest.current);
-        setMessage(
-          caughtUp
-            ? "Todos los cambios guardados"
-            : "Cambios pendientes de guardar",
-        );
-        if (!initial && caughtUp)
-          router.replace(
-            `/spaces/${space}/content/${entry.id}?locale=${locale}`,
+          const entry = r.data!;
+          currentId.current = entry.id;
+          setPersistedId(entry.id);
+          version.current = entry.version;
+          saved.current = serialized;
+          const caughtUp = serialized === JSON.stringify(latest.current);
+          setMessage(
+            caughtUp
+              ? "Todos los cambios guardados"
+              : "Cambios pendientes de guardar",
           );
-        return entry;
+          if (!initial && caughtUp)
+            router.replace(
+              `/spaces/${space}/content/${entry.id}?locale=${locale}`,
+            );
+          return entry;
+        } catch {
+          setRecoverable("save");
+          setError(
+            "No se pudo conectar. Tus cambios siguen en este editor; pulsa Reintentar para guardarlos.",
+          );
+          setMessage("Guardado pendiente");
+          return undefined;
+        } finally {
+          flight.current = null;
+          setSaving(false);
+        }
       })();
       flight.current = task;
-      try {
-        return await task;
-      } catch {
-        setError(
-          "No se pudo conectar. Tus cambios siguen en este editor; pulsa Guardar para reintentar.",
-        );
-        setMessage("Guardado pendiente");
-        return undefined;
-      } finally {
-        flight.current = null;
-        setSaving(false);
-      }
+      return task;
     },
     [space, type.id, router, initial, locale],
   );
@@ -183,7 +197,11 @@ export function EntryEditor({
   }, [draft, error, persist, saving, persistedId]);
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
-      if (JSON.stringify(latest.current) !== saved.current) e.preventDefault();
+      if (
+        !discardConfirmed.current &&
+        JSON.stringify(latest.current) !== saved.current
+      )
+        e.preventDefault();
     };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
@@ -203,6 +221,10 @@ export function EntryEditor({
       const link = (event.target as Element | null)?.closest("a");
       if (
         !link ||
+        link.hasAttribute("download") ||
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.altKey ||
         event.ctrlKey ||
         event.metaKey ||
         event.shiftKey ||
@@ -239,6 +261,7 @@ export function EntryEditor({
   } as Entry;
   const status = statusOf(current, type, publications, locale);
   const publish = async (remove = false) => {
+    setRecoverable(null);
     if (!remove) {
       const errors: Record<string, string> = {};
       for (const f of type.fields.filter((f) => f.active && f.required)) {
@@ -263,27 +286,49 @@ export function EntryEditor({
         if (!e) return;
       }
       const r = await publicationAction(space, e.id, locale, e.version, remove);
-      if (r.error) setError(r.error);
-      else {
+      if (r.error) {
+        setRecoverable("publication");
+        setError(r.error);
+        if (r.error.includes("CONFLICT")) {
+          conflict.current = true;
+          setHasConflict(true);
+          setMessage("Conflicto sin resolver");
+        }
+      } else {
         setMessage(remove ? "Publicación retirada" : "Contenido publicado");
         router.refresh();
       }
+    } catch {
+      setRecoverable("publication");
+      setError(
+        "No se pudo confirmar la publicación. Tus cambios siguen en este editor; recarga después de conservar una copia para comprobar su estado.",
+      );
     } finally {
       setBusy(false);
     }
   };
+  const downloadDraft = () => {
+    const json = serializeDraftBackup({
+      spaceId: space,
+      entryId: currentId.current,
+      baseVersion: version.current,
+      type,
+      draft: latest.current,
+    });
+    const url = URL.createObjectURL(
+      new Blob([json], { type: "application/json" }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `contenio-${type.key}-${currentId.current ?? "nuevo"}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
   return (
     <>
-      <Link
-        href={`/spaces/${space}/content`}
-        className="back-link"
-        onClick={async (e) => {
-          if (saved.current !== JSON.stringify(latest.current)) {
-            e.preventDefault();
-            if (await persist()) router.push(`/spaces/${space}/content`);
-          }
-        }}
-      >
+      <Link href={`/spaces/${space}/content`} className="back-link">
         <ArrowLeft size={15} />
         Todas las entradas
       </Link>
@@ -301,6 +346,8 @@ export function EntryEditor({
           <span className="save-indicator" role="status">
             {saving ? (
               <LoaderCircle size={14} className="spin" />
+            ) : error ? (
+              <AlertTriangle size={15} />
             ) : (
               <CheckCheck size={15} />
             )}{" "}
@@ -317,18 +364,81 @@ export function EntryEditor({
         </div>
       </div>
       {error && (
-        <div className="notice error" role="alert">
-          {error}
-          {hasConflict && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => window.location.reload()}
-            >
-              Recargar entrada
-            </Button>
+        <div className="notice error editor-recovery" role="alert">
+          {recoverable ? (
+            <>
+              <strong>
+                {hasConflict
+                  ? "Otra sesión ha cambiado esta entrada."
+                  : "No se ha podido completar la operación."}
+              </strong>
+              <p>
+                {hasConflict
+                  ? "Tus cambios siguen aquí. No se sobrescribirá la versión guardada por la otra sesión."
+                  : error}
+              </p>
+              <p>
+                Descarga una copia con los campos compartidos y los dos idiomas
+                antes de recargar. Podrás consultar el JSON y copiar tus cambios
+                después.
+              </p>
+              <div className="recovery-actions">
+                <Button variant="outline" size="sm" onClick={downloadDraft}>
+                  <Download size={15} />
+                  Descargar mis cambios
+                </Button>
+                {recoverable === "save" && !hasConflict && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={saving || busy}
+                    onClick={() => void persist()}
+                  >
+                    Reintentar guardado
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={saving || busy}
+                  onClick={() => setReloadOpen(true)}
+                >
+                  Recargar entrada
+                </Button>
+              </div>
+            </>
+          ) : (
+            error
           )}
         </div>
+      )}
+      {reloadOpen && (
+        <Dialog titleId="reload-title" onClose={() => setReloadOpen(false)}>
+          <h2 id="reload-title">¿Recargar y descartar tus cambios?</h2>
+          <p>
+            Se abrirá la última versión guardada en el servidor. Los cambios que
+            solo están en este editor se perderán. La copia descargada permite
+            consultarlos, pero no se importa automáticamente.
+          </p>
+          <div className="recovery-actions">
+            <Button variant="outline" onClick={downloadDraft}>
+              <Download size={15} />
+              Descargar mis cambios
+            </Button>
+            <Button variant="outline" onClick={() => setReloadOpen(false)}>
+              Seguir editando
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                discardConfirmed.current = true;
+                window.location.reload();
+              }}
+            >
+              Descartar y recargar
+            </Button>
+          </div>
+        </Dialog>
       )}
       <div className="editor-layout">
         <section className="content-panel editor-panel">
@@ -563,7 +673,7 @@ export function EntryEditor({
               <Button
                 variant="ghost"
                 className="full"
-                disabled={busy || saving}
+                disabled={busy || saving || hasConflict}
                 onClick={() => void publish(true)}
               >
                 Retirar publicación
@@ -595,7 +705,7 @@ export function EntryEditor({
             <Button
               variant="ghost"
               className="delete-entry"
-              disabled={busy || saving}
+              disabled={busy || saving || hasConflict}
               onClick={async () => {
                 if (
                   !window.confirm(

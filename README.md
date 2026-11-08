@@ -95,6 +95,14 @@ En el editor, los botones de archivos y relaciones abren un selector con búsque
 
 La carga inicial del editor consulta únicamente la entrada abierta y los archivos utilizados por su borrador o sus publicaciones actuales, en ambos idiomas. No carga los archivos que solo aparecen en publicaciones históricas. Las etiquetas de las referencias del borrador se recuperan sin sus cuerpos. El endpoint interno `/api/editor/spaces/{spaceId}/choices` requiere una sesión de editor o administrador y permisos sobre el espacio; no acepta claves públicas de lectura. Sus respuestas son privadas y no se almacenan en caché. Las búsquedas se pueden reintentar sin modificar el borrador.
 
+## Fallos de guardado y conflictos
+
+Si falla la conexión al guardar, los cambios permanecen en el editor y **Reintentar guardado** permite enviarlos otra vez. La navegación interna espera al guardado en curso y guarda las ediciones posteriores antes de salir. Un fallo cancela esa navegación y mantiene el contenido disponible.
+
+Si otra sesión ha guardado la misma entrada, el editor bloquea nuevos guardados y publicaciones con la versión antigua. **Descargar mis cambios** crea un JSON local con los campos compartidos, ES/GL, el modelo y la versión desde la que se estaba editando. La copia incluye identificadores de archivos y referencias; no incluye los archivos, las sesiones ni las claves de lectura.
+
+**Recargar entrada** pide confirmar antes de descartar los cambios locales. Puedes cancelar o descargar la copia también desde ese diálogo. Tras recargar verás la versión del servidor y podrás consultar el JSON para copiar lo que necesites. La copia se descarga manualmente; no hay importación ni fusión automática.
+
 ## Revisar antes de publicar
 
 En **Vista previa** y **JSON**, el selector **Borrador / Publicado** permite comparar el contenido del editor con la publicación del idioma elegido. El borrador incluye cambios todavía sin guardar; cambiar de vista o versión no guarda ni publica. El resumen identifica los campos que difieren, incluidos campos compartidos y desactivados después de publicar.
